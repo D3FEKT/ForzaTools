@@ -16,68 +16,8 @@
         #region Windows Form Designer generated code
         // In MainForm.Designer.cs or InitializeComponent() inside MainForm.cs
 
-        private System.Windows.Forms.ToolStrip toolStrip;
-        private System.Windows.Forms.ToolStripTextBox searchTextBox;
-        private System.Windows.Forms.ToolStripButton searchButton;
-        private System.Windows.Forms.ToolStripButton groupByTagButton;
-        private System.Windows.Forms.TabControl rightTabControl;
-        private System.Windows.Forms.TabPage propertyPage;
-        private System.Windows.Forms.TabPage hexPage;
-        // Define the HexControl variable (Reuse the control from HexEditorForm.cs)
-        private ForzaTools.ModelBinEditor.HexViewControl embeddedHexView;
+        private System.Windows.Forms.ToolStripMenuItem batchConvertMenuItem;
 
-        private void InitializeEnhancedUI()
-        {
-            // 1. ToolStrip Setup
-            this.toolStrip = new System.Windows.Forms.ToolStrip();
-            this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
-            this.searchButton = new System.Windows.Forms.ToolStripButton();
-            this.groupByTagButton = new System.Windows.Forms.ToolStripButton();
-
-            this.toolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-        new System.Windows.Forms.ToolStripLabel("Search:"),
-        this.searchTextBox,
-        this.searchButton,
-        new System.Windows.Forms.ToolStripSeparator(),
-        this.groupByTagButton
-    });
-
-            this.searchTextBox.Size = new System.Drawing.Size(150, 23);
-            this.searchButton.Text = "Find";
-            this.searchButton.Click += (s, e) => PopulateTree(); // Reload tree with filter
-            this.searchTextBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) PopulateTree(); };
-
-            this.groupByTagButton.Text = "Group by Type";
-            this.groupByTagButton.CheckOnClick = true;
-            this.groupByTagButton.Checked = true; // Default to grouped
-            this.groupByTagButton.Click += (s, e) => PopulateTree();
-
-            // Add ToolStrip to Panel1 (Top)
-            this.splitContainer.Panel1.Controls.Add(this.toolStrip);
-            this.treeView.Top = 25; // Push tree down
-            this.treeView.Height -= 25;
-
-            // 2. TabControl Setup (Right Side)
-            this.rightTabControl = new System.Windows.Forms.TabControl();
-            this.propertyPage = new System.Windows.Forms.TabPage("Properties");
-            this.hexPage = new System.Windows.Forms.TabPage("Hex View");
-
-            this.rightTabControl.Dock = DockStyle.Fill;
-            this.rightTabControl.Controls.Add(this.propertyPage);
-            this.rightTabControl.Controls.Add(this.hexPage);
-
-            // Move PropertyGrid into Tab 1
-            this.propertyGrid.Parent = this.propertyPage;
-            this.propertyGrid.Dock = DockStyle.Fill;
-
-            // Add HexView into Tab 2 (Using the control class from your HexEditorForm.cs)
-            this.embeddedHexView = new HexViewControl();
-            this.embeddedHexView.Dock = DockStyle.Fill;
-            this.hexPage.Controls.Add(this.embeddedHexView);
-
-            this.splitContainer.Panel2.Controls.Clear();
-            this.splitContainer.Panel2.Controls.Add(this.rightTabControl);
-        }
 
         private void InitializeComponent()
         {
@@ -109,6 +49,7 @@
             this.bottomPanel.SuspendLayout();
             this.SuspendLayout();
 
+
             // 
             // menuStrip
             // 
@@ -120,6 +61,14 @@
             this.menuStrip.TabIndex = 0;
             this.menuStrip.Text = "menuStrip1";
 
+            this.batchConvertMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.batchConvertMenuItem.Name = "batchConvertMenuItem";
+            this.batchConvertMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.batchConvertMenuItem.Text = "Batch Conversion...";
+            this.batchConvertMenuItem.Click += new System.EventHandler(this.BatchConvert_Click);
+
+            // Add to File Menu (make sure this is added BEFORE or AFTER existing items as desired)
+            this.fileMenu.DropDownItems.Add(this.batchConvertMenuItem);
             // 
             // fileMenu
             // 
@@ -232,6 +181,7 @@
             this.bottomPanel.Controls.Add(this.targetVersionComboBox);
             this.bottomPanel.Controls.Add(this.convertLabel);
             this.bottomPanel.Padding = new System.Windows.Forms.Padding(10);
+
 
             // 
             // convertLabel

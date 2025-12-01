@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Windows.Forms;
+using System.Drawing;
 using System.Reflection;
 using System.Linq;
+using System.Threading.Tasks;
 using ForzaTools.Bundles;
 using ForzaTools.Bundles.Blobs;
 using ForzaTools.Shared;
@@ -14,63 +16,60 @@ namespace ForzaTools.ModelBinEditor
 {
     public partial class MainForm : Form
     {
+        // --- Fields ---
         private Bundle currentBundle;
         private string currentFilePath;
         private ContextMenuStrip propertyGridContextMenu;
         private ToolStripMenuItem viewPropertyHexMenuItem;
 
-        // Definition for Game Versions (Kept for future use)
+        // Enhanced UI Controls
+        private System.Windows.Forms.ToolStrip toolStrip;
+        private System.Windows.Forms.ToolStripTextBox searchTextBox;
+        private System.Windows.Forms.ToolStripButton searchButton;
+        private System.Windows.Forms.ToolStripButton groupByTagButton;
+        private System.Windows.Forms.TabControl rightTabControl;
+        private System.Windows.Forms.TabPage propertyPage;
+        private System.Windows.Forms.TabPage hexPage;
+        private ForzaTools.ModelBinEditor.HexViewControl embeddedHexView;
+
+        //carbin support
+        private ForzaTools.CarScene.CarbinFile currentCarbin;
+
+        // Console Controls
+        private RichTextBox consoleBox;
+        private Panel consolePanel;
+
+        // Game Profile Class
         private class GameProfile
         {
             public string Name { get; set; }
-
-            public Version LSCE_Version { get; set; }
-            public Version Mesh_Version { get; set; }
-            public Version MTPR_Version { get; set; }
-            public Version VLay_Version { get; set; }
-            public Version Modl_Version { get; set; }
-
-            public byte BundleMajor { get; set; }
-            public byte BundleMinor { get; set; }
-
             public override string ToString() => Name;
         }
 
+        // --- Constructor ---
         public MainForm()
         {
             InitializeComponent();
             InitializePropertyGridContextMenu();
             InitializeTargetVersionDropdown();
-            InitializeEnhancedUI();
+            InitializeEnhancedUI();     // Build tabs, toolbar, hex view
+            InitializeConsoleWindow();  // Build bottom console
         }
+
+        // --- Initialization ---
 
         private void InitializeTargetVersionDropdown()
         {
             var games = new List<GameProfile>
             {
-                new GameProfile { Name = "Forza Horizon 5 / Motorsport 2023",
-                    LSCE_Version = new Version(1, 8), Mesh_Version = new Version(1, 9), MTPR_Version = new Version(2, 1), VLay_Version = new Version(1, 1), Modl_Version = new Version(1, 3), BundleMajor = 1, BundleMinor = 1 },
-
-                new GameProfile { Name = "Forza Horizon 4",
-                    LSCE_Version = new Version(1, 6), Mesh_Version = new Version(1, 9), MTPR_Version = new Version(2, 0), VLay_Version = new Version(1, 1), Modl_Version = new Version(1, 2), BundleMajor = 1, BundleMinor = 1 },
-
-                new GameProfile { Name = "Forza Motorsport 7",
-                    LSCE_Version = new Version(1, 6), Mesh_Version = new Version(1, 9), MTPR_Version = new Version(2, 0), VLay_Version = new Version(1, 1), Modl_Version = new Version(1, 2), BundleMajor = 1, BundleMinor = 1 },
-
-                new GameProfile { Name = "Forza 6 Apex",
-                    LSCE_Version = new Version(1, 6), Mesh_Version = new Version(1, 8), MTPR_Version = new Version(2, 0), VLay_Version = new Version(1, 1), Modl_Version = new Version(1, 2), BundleMajor = 1, BundleMinor = 1 },
-
-                new GameProfile { Name = "Forza Horizon 3",
-                    LSCE_Version = new Version(1, 5), Mesh_Version = new Version(1, 8), MTPR_Version = new Version(2, 0), VLay_Version = new Version(1, 1), Modl_Version = new Version(1, 2), BundleMajor = 1, BundleMinor = 1 },
-
-                new GameProfile { Name = "Forza Horizon 2",
-                    LSCE_Version = new Version(1, 4), Mesh_Version = new Version(1, 7), MTPR_Version = new Version(2, 0), VLay_Version = new Version(1, 1), Modl_Version = new Version(1, 1), BundleMajor = 1, BundleMinor = 0 },
-
-                new GameProfile { Name = "Forza Motorsport 6",
-                    LSCE_Version = new Version(1, 4), Mesh_Version = new Version(1, 7), MTPR_Version = new Version(2, 0), VLay_Version = new Version(1, 1), Modl_Version = new Version(1, 1), BundleMajor = 1, BundleMinor = 0 },
-
-                new GameProfile { Name = "Forza Motorsport 5",
-                    LSCE_Version = new Version(1, 3), Mesh_Version = new Version(1, 7), MTPR_Version = new Version(2, 0), VLay_Version = new Version(0, 0), Modl_Version = new Version(1, 1), BundleMajor = 1, BundleMinor = 0 }
+                new GameProfile { Name = "Forza Horizon 5 / Motorsport 2023" },
+                new GameProfile { Name = "Forza Horizon 4" },
+                new GameProfile { Name = "Forza Motorsport 7" },
+                new GameProfile { Name = "Forza 6 Apex" },
+                new GameProfile { Name = "Forza Horizon 3" },
+                new GameProfile { Name = "Forza Horizon 2" },
+                new GameProfile { Name = "Forza Motorsport 6" },
+                new GameProfile { Name = "Forza Motorsport 5" }
             };
 
             foreach (var g in games)
@@ -88,184 +87,114 @@ namespace ForzaTools.ModelBinEditor
 
             propertyGrid.ContextMenuStrip = propertyGridContextMenu;
             propertyGrid.ContextMenuStrip.Opening += PropertyGridContextMenu_Opening;
-
             propertyGrid.PropertySort = PropertySort.NoSort;
         }
-        private bool MakeFH5Compatible(Bundle bundle)
+
+        private void InitializeEnhancedUI()
         {
-            // FIX 1: Call GetBlobByIndex on the 'bundle' instance
-            MeshBlob meshBlob = (MeshBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_Mesh, 0);
-            if (meshBlob == null) throw new Exception("No mesh blob found in the model.");
+            // 1. ToolStrip Setup
+            this.toolStrip = new System.Windows.Forms.ToolStrip();
+            this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
+            this.searchButton = new System.Windows.Forms.ToolStripButton();
+            this.groupByTagButton = new System.Windows.Forms.ToolStripButton();
 
-            // FIX 2: Call GetBlobByIndex on the 'bundle' instance
-            VertexLayoutBlob layout = (VertexLayoutBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexLayout, meshBlob.VertexLayoutIndex);
-            if (layout == null) throw new Exception("No vertex layout blob found in the model.");
+            this.toolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+                new System.Windows.Forms.ToolStripLabel("Search:"),
+                this.searchTextBox,
+                this.searchButton,
+                new System.Windows.Forms.ToolStripSeparator(),
+                this.groupByTagButton
+            });
 
-            // Check if the model already has a third tangent component
-            bool hasThirdTangentComponent = false;
-            foreach (var element in layout.Elements)
+            this.searchTextBox.Size = new System.Drawing.Size(150, 23);
+            this.searchButton.Text = "Find";
+            this.searchButton.Click += (s, e) => PopulateTree();
+            this.searchTextBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) PopulateTree(); };
+
+            this.groupByTagButton.Text = "Group by Type";
+            this.groupByTagButton.CheckOnClick = true;
+            this.groupByTagButton.Checked = true;
+            this.groupByTagButton.Click += (s, e) => PopulateTree();
+
+            // 2. Adjust Layout and Add Controls
+            if (this.splitContainer != null)
             {
-                if (layout.SemanticNames[element.SemanticNameIndex] == "TANGENT" && element.SemanticIndex == 2)
-                {
-                    hasThirdTangentComponent = true;
-                    break;
-                }
-            }
+                this.splitContainer.Panel1.Controls.Add(this.toolStrip);
+                this.treeView.Top = 25;
+                this.treeView.Height -= 25;
 
-            // If it exists, we don't need to do anything
-            if (hasThirdTangentComponent) return false;
+                // 3. Tab Control Setup
+                this.rightTabControl = new System.Windows.Forms.TabControl();
+                this.propertyPage = new System.Windows.Forms.TabPage("Properties");
+                this.hexPage = new System.Windows.Forms.TabPage("Hex View");
 
-            // Find where to insert the new component (after existing TANGENTs)
-            int tangentIndex = layout.Elements.FindIndex(e => layout.SemanticNames[e.SemanticNameIndex] == "TANGENT");
-            if (tangentIndex < 0) throw new Exception("No tangent semantic found in vertex layout.");
+                this.rightTabControl.Dock = DockStyle.Fill;
+                this.rightTabControl.Controls.Add(this.propertyPage);
+                this.rightTabControl.Controls.Add(this.hexPage);
 
-            // Create new Input Layout Element
-            D3D12_INPUT_LAYOUT_DESC thirdTangentComponent = new D3D12_INPUT_LAYOUT_DESC()
-            {
-                SemanticNameIndex = (short)layout.SemanticNames.IndexOf("TANGENT"),
-                Format = DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM, // FH5 specific format
-                InputSlot = 1,
-                SemanticIndex = 2,
-                AlignedByteOffset = -1,
-                InstanceDataStepRate = 0,
-            };
+                // Move PropertyGrid
+                this.propertyGrid.Parent = this.propertyPage;
+                this.propertyGrid.Dock = DockStyle.Fill;
 
-            // Insert into Layout
-            layout.Elements.Insert(tangentIndex + 2, thirdTangentComponent);
-            layout.PackedFormats.Insert(tangentIndex + 2, DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS);
-            layout.Flags |= 0x80; // Required flag for FH5
+                // Add Embedded Hex View
+                this.embeddedHexView = new HexViewControl();
+                this.embeddedHexView.Dock = DockStyle.Fill;
+                this.hexPage.Controls.Add(this.embeddedHexView);
 
-            // FIX 3: Call GetDataOffsetOfElement on the 'layout' instance
-            // (Ensure you made this method PUBLIC in VertexLayoutBlob.cs)
-            int offset = layout.GetDataOffsetOfElement("TANGENT", 2);
-
-            // FIX 4: Call GetBlobByIndex on the 'bundle' instance
-            VertexBufferBlob buffer = (VertexBufferBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexBuffer, 1);
-            if (buffer == null) throw new Exception("No vertex buffer blob found in the model.");
-
-            // Insert placeholder data (0xFF) into the vertex buffer streams
-            for (int i = 0; i < buffer.Header.Data.Length; i++)
-            {
-                var l = buffer.Header.Data[i].ToList();
-                l.Insert(offset, 0xFF);
-                l.Insert(offset + 1, 0xFF);
-                l.Insert(offset + 2, 0xFF);
-                l.Insert(offset + 3, 0xFF);
-
-                buffer.Header.Data[i] = l.ToArray();
-            }
-
-            // Update Header info
-            byte totalSize = layout.GetTotalVertexSize();
-
-            // Use Stride (from previous fix)
-            buffer.Header.Stride = totalSize;
-
-            buffer.Header.NumElements = (byte)layout.Elements.Count;
-
-            return true;
-        }
-
-        // Helper to calculate the byte offset of a specific element in the vertex layout
-        private int GetDataOffsetOfElement(VertexLayoutBlob layout, string semanticName, int semanticIndex)
-        {
-            int offset = 0;
-            for (int i = 0; i < layout.Elements.Count; i++)
-            {
-                var element = layout.Elements[i];
-                string name = layout.SemanticNames[element.SemanticNameIndex];
-
-                if (name == semanticName && element.SemanticIndex == semanticIndex)
-                    return offset;
-
-                DXGI_FORMAT format = layout.PackedFormats[i];
-                offset += GetSizeOfElementFormat(format);
-
-                // Replicate alignment logic from VertexLayoutBlob
-                if (i + 1 < layout.Elements.Count && offset % 4 != 0)
-                {
-                    if (GetSizeOfElementFormat(layout.PackedFormats[i + 1]) >= 4)
-                        offset += (offset % 4);
-                }
-            }
-            return -1;
-        }
-
-        // Helper to get size of DXGI Formats (Local copy as the original might be inaccessible)
-        private static byte GetSizeOfElementFormat(DXGI_FORMAT format)
-        {
-            return format switch
-            {
-                DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT => 16,
-                DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT => 12,
-                DXGI_FORMAT.DXGI_FORMAT_R32G32_FLOAT => 8,
-                DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R16G16_UNORM => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R16G16_SNORM => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R16G16_FLOAT => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R8G8_UNORM => 2,
-                DXGI_FORMAT.DXGI_FORMAT_R8G8_SINT => 2,
-                DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R11G11B10_FLOAT => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS => 4,
-                DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS => 2,
-                DXGI_FORMAT.DXGI_FORMAT_X32_TYPELESS_G8X24_UINT => 8,
-                _ => 4,
-            };
-        }
-
-        private void ConvertButton_Click(object sender, EventArgs e)
-        {
-            if (currentBundle == null) return;
-
-            // Check if FH5 is selected (or just run it as the primary conversion logic)
-            var selectedProfile = targetVersionComboBox.SelectedItem as GameProfile;
-            if (selectedProfile == null || !selectedProfile.Name.Contains("Horizon 5"))
-            {
-                if (MessageBox.Show("The conversion logic is specifically designed for Forza Horizon 5.\nContinue anyway?", "Version Mismatch", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-                    return;
-            }
-
-            try
-            {
-                // Perform the FH5 compatibility conversion
-                bool modified = MakeFH5Compatible(currentBundle);
-
-                if (modified)
-                {
-                    // Serialize to memory to refresh the bundle state
-                    using (MemoryStream ms = new MemoryStream())
-                    {
-                        currentBundle.Serialize(ms);
-                        ms.Position = 0;
-
-                        // Reload the bundle to reflect changes in UI
-                        var newBundle = new Bundle();
-                        newBundle.Load(ms);
-                        currentBundle = newBundle;
-                        PopulateTree();
-                    }
-                    MessageBox.Show("Conversion to FH5 format completed successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                else
-                {
-                    MessageBox.Show("Model appears to already be compatible with FH5 (Tangent 3 found).", "No Changes Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Conversion failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                this.splitContainer.Panel2.Controls.Clear();
+                this.splitContainer.Panel2.Controls.Add(this.rightTabControl);
             }
         }
 
-        private void Exit_Click(object sender, EventArgs e) => Close();
+        private void InitializeConsoleWindow()
+        {
+            consolePanel = new Panel();
+            consolePanel.Height = 150;
+            consolePanel.Dock = DockStyle.Bottom;
+            consolePanel.Padding = new Padding(5);
+            consolePanel.BackColor = SystemColors.ControlDark;
+
+            consoleBox = new RichTextBox();
+            consoleBox.Dock = DockStyle.Fill;
+            consoleBox.BackColor = Color.FromArgb(30, 30, 30);
+            consoleBox.ForeColor = Color.LightGray;
+            consoleBox.Font = new Font("Consolas", 9f);
+            consoleBox.ReadOnly = true;
+            consoleBox.WordWrap = false;
+            consoleBox.ScrollBars = RichTextBoxScrollBars.Vertical;
+
+            consolePanel.Controls.Add(consoleBox);
+            this.Controls.Add(consolePanel);
+
+            // Ensure Correct Z-Order
+            this.Controls.SetChildIndex(this.splitContainer, 0);
+            this.Controls.SetChildIndex(this.consolePanel, 1);
+            if (this.bottomPanel != null)
+                this.Controls.SetChildIndex(this.bottomPanel, 2);
+        }
+
+        private void LogToConsole(string message, Color? color = null)
+        {
+            if (consoleBox.InvokeRequired)
+            {
+                consoleBox.Invoke(new Action(() => LogToConsole(message, color)));
+                return;
+            }
+
+            consoleBox.SelectionStart = consoleBox.TextLength;
+            consoleBox.SelectionLength = 0;
+            consoleBox.SelectionColor = color ?? Color.LightGray;
+            consoleBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}\r\n");
+            consoleBox.ScrollToCaret();
+        }
+
+        // --- File Operations ---
 
         private void OpenFile_Click(object sender, EventArgs e)
         {
             using (OpenFileDialog ofd = new OpenFileDialog())
             {
-                ofd.Filter = "Forza Files (*.modelbin;*.swatchbin)|*.modelbin;*.swatchbin|All files (*.*)|*.*";
+                ofd.Filter = "All Supported Files|*.modelbin;*.swatchbin;*.carbin|ModelBin|*.modelbin|CarScene|*.carbin|All files (*.*)|*.*";
                 if (ofd.ShowDialog() == DialogResult.OK) LoadFile(ofd.FileName);
             }
         }
@@ -274,30 +203,79 @@ namespace ForzaTools.ModelBinEditor
         {
             try
             {
-                var newBundle = new Bundle();
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
-                {
-                    newBundle.Load(fs);
-                }
-
-                currentBundle = newBundle;
                 currentFilePath = path;
+                string ext = Path.GetExtension(path).ToLower();
 
-                // Detection logic removed
-
-                PopulateTree();
-
-                this.Text = $"Forza ModelBin Editor - {Path.GetFileName(path)}";
+                if (ext == ".carbin")
+                {
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
+                    {
+                        currentCarbin = new ForzaTools.CarScene.CarbinFile();
+                        currentCarbin.Load(fs);
+                    }
+                    currentBundle = null; // Clear modelbin data
+                    PopulateCarbinTree(); // New method
+                    this.Text = $"Forza ModelBin Editor - {Path.GetFileName(path)} (Scene v{currentCarbin.Scene.Version})";
+                    LogToConsole($"Loaded Scene {path}", Color.LimeGreen);
+                }
+                else
+                {
+                    // Existing modelbin logic
+                    var newBundle = new Bundle();
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
+                    {
+                        newBundle.Load(fs);
+                    }
+                    currentBundle = newBundle;
+                    currentCarbin = null;
+                    PopulateTree(); // Existing method
+                    this.Text = $"Forza ModelBin Editor - {Path.GetFileName(path)}";
+                    LogToConsole($"Loaded Bundle {path}", Color.LimeGreen);
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Error loading file: {ex.Message}", "Load Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogToConsole($"Error loading file: {ex.Message}", Color.Red);
             }
         }
 
+        private void SaveFile_Click(object sender, EventArgs e)
+        {
+            if (currentBundle == null) return;
+            using (SaveFileDialog sfd = new SaveFileDialog())
+            {
+                sfd.Filter = "ModelBin|*.modelbin|All|*.*";
+                if (!string.IsNullOrEmpty(currentFilePath)) sfd.FileName = Path.GetFileName(currentFilePath);
+                else sfd.FileName = "file.modelbin";
+
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        using (var fs = new FileStream(sfd.FileName, FileMode.Create))
+                            currentBundle.Serialize(fs);
+                        MessageBox.Show("Saved successfully.");
+                        LogToConsole($"Saved to {sfd.FileName}", Color.LimeGreen);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error saving: {ex.Message}");
+                        LogToConsole($"Error saving: {ex.Message}", Color.Red);
+                    }
+                }
+            }
+        }
+
+        private void Exit_Click(object sender, EventArgs e) => Close();
+
+        // --- Tree View Logic ---
 
         private void PopulateTree()
         {
+            // Safety check for UI initialization
+            if (searchTextBox == null || groupByTagButton == null) return;
+
             treeView.BeginUpdate();
             try
             {
@@ -310,28 +288,23 @@ namespace ForzaTools.ModelBinEditor
                 root.Tag = currentBundle;
                 treeView.Nodes.Add(root);
 
-                // Get filter text
                 string filter = searchTextBox.Text.ToLower();
                 bool useGroups = groupByTagButton.Checked;
-
-                // Dictionary to hold group nodes if grouping is enabled
                 Dictionary<string, TreeNode> groups = new Dictionary<string, TreeNode>();
 
                 for (int i = 0; i < currentBundle.Blobs.Count; i++)
                 {
                     var blob = currentBundle.Blobs[i];
-
-                    // Generate a descriptive name
                     string blobName = GetBlobName(blob, i);
 
-                    // SEARCH FILTER: Skip if name doesn't match
+                    // Filter
                     if (!string.IsNullOrEmpty(filter) && !blobName.ToLower().Contains(filter))
                         continue;
 
                     TreeNode blobNode = new TreeNode(blobName);
                     blobNode.Tag = blob;
 
-                    // --- Add Metadata Nodes (Keep existing logic) ---
+                    // 1. Metadata
                     TreeNode metaRoot = new TreeNode("Metadata");
                     foreach (var meta in blob.Metadatas)
                     {
@@ -340,14 +313,52 @@ namespace ForzaTools.ModelBinEditor
                         metaRoot.Nodes.Add(metaNode);
                     }
                     if (metaRoot.Nodes.Count > 0) blobNode.Nodes.Add(metaRoot);
-                    // -----------------------------------------------
 
-                    // GROUPING LOGIC
+                    // 2. Special Blob Logic
+                    // Skeleton Bones
+                    if (blob is SkeletonBlob skel)
+                    {
+                        TreeNode bonesRoot = new TreeNode($"BonesList ({skel.Bones.Count} items)");
+                        for (int b = 0; b < skel.Bones.Count; b++)
+                        {
+                            var bone = skel.Bones[b];
+                            StringBuilder boneLabel = new StringBuilder();
+                            boneLabel.Append($"[{b}] {bone.Name}");
+                            if (bone.ParentId > -1) boneLabel.Append($" (Parent: {bone.ParentId})");
+                            TreeNode boneNode = new TreeNode(boneLabel.ToString());
+                            boneNode.Tag = bone;
+                            bonesRoot.Nodes.Add(boneNode);
+                        }
+                        if (bonesRoot.Nodes.Count > 0) blobNode.Nodes.Add(bonesRoot);
+                    }
+
+                    // Nested Bundle in Material
+                    if (blob is MaterialBlob matBlob && matBlob.Bundle != null)
+                    {
+                        TreeNode subBundleNode = new TreeNode($"Nested Bundle ({matBlob.Bundle.Blobs.Count} items)");
+                        for (int j = 0; j < matBlob.Bundle.Blobs.Count; j++)
+                        {
+                            var subBlob = matBlob.Bundle.Blobs[j];
+                            TreeNode subBlobNode = new TreeNode(GetBlobName(subBlob, j));
+                            subBlobNode.Tag = subBlob;
+
+                            TreeNode subMetaRoot = new TreeNode("Metadata");
+                            foreach (var subMeta in subBlob.Metadatas)
+                            {
+                                TreeNode subMetaNode = new TreeNode(GetMetadataName(subMeta));
+                                subMetaNode.Tag = subMeta;
+                                subMetaRoot.Nodes.Add(subMetaNode);
+                            }
+                            if (subMetaRoot.Nodes.Count > 0) subBlobNode.Nodes.Add(subMetaRoot);
+                            subBundleNode.Nodes.Add(subBlobNode);
+                        }
+                        blobNode.Nodes.Add(subBundleNode);
+                    }
+
+                    // 3. Add to Tree (Grouped or Flat)
                     if (useGroups)
                     {
-                        // Extract tag name (e.g., "Mesh", "Material")
                         string typeName = blob.GetType().Name.Replace("Blob", "");
-
                         if (!groups.ContainsKey(typeName))
                         {
                             TreeNode groupNode = new TreeNode(typeName);
@@ -360,74 +371,9 @@ namespace ForzaTools.ModelBinEditor
                     {
                         root.Nodes.Add(blobNode);
                     }
-
-                    if (blob is MaterialBlob matBlob && matBlob.Bundle != null)
-                    {
-                        // Create a folder for the nested bundle
-                        TreeNode subBundleNode = new TreeNode($"Nested Bundle ({matBlob.Bundle.Blobs.Count} items)");
-
-                        for (int j = 0; j < matBlob.Bundle.Blobs.Count; j++)
-                        {
-                            var subBlob = matBlob.Bundle.Blobs[j];
-
-                            // Create node for the sub-blob using the same naming helper
-                            TreeNode subBlobNode = new TreeNode(GetBlobName(subBlob, j));
-                            subBlobNode.Tag = subBlob; // Allow PropertyGrid inspection
-
-                            // Add Metadata for the sub-blob
-                            TreeNode subMetaRoot = new TreeNode("Metadata");
-                            foreach (var subMeta in subBlob.Metadatas)
-                            {
-                                TreeNode subMetaNode = new TreeNode(GetMetadataName(subMeta));
-                                subMetaNode.Tag = subMeta;
-                                subMetaRoot.Nodes.Add(subMetaNode);
-                            }
-
-                            // Only add metadata folder if it has items
-                            if (subMetaRoot.Nodes.Count > 0)
-                            {
-                                subBlobNode.Nodes.Add(subMetaRoot);
-                            }
-
-                            // Add the sub-blob to the nested bundle folder
-                            subBundleNode.Nodes.Add(subBlobNode);
-                        }
-
-                        // Add the nested bundle folder to the main Material node
-                        blobNode.Nodes.Add(subBundleNode);
-                    }
-
-                    if (blob is SkeletonBlob skel)
-                    {
-                        TreeNode bonesRoot = new TreeNode($"BonesList ({skel.Bones.Count} items)");
-
-                        for (int b = 0; b < skel.Bones.Count; b++)
-                        {
-                            var bone = skel.Bones[b];
-
-                            // Format: [Index] BoneName (Parent: ParentIndex)
-                            StringBuilder boneLabel = new StringBuilder();
-                            boneLabel.Append($"[{b}] {bone.Name}");
-
-                            if (bone.ParentId > -1)
-                                boneLabel.Append($" (Parent: {bone.ParentId})");
-
-                            TreeNode boneNode = new TreeNode(boneLabel.ToString());
-                            boneNode.Tag = bone; // Links to PropertyGrid
-
-                            bonesRoot.Nodes.Add(boneNode);
-                        }
-
-                        // Only add the folder if there are actual bones
-                        if (bonesRoot.Nodes.Count > 0)
-                        {
-                            blobNode.Nodes.Add(bonesRoot);
-                        }
-                    }
                 }
 
                 root.Expand();
-                // If searching, expand all matches
                 if (!string.IsNullOrEmpty(filter)) root.ExpandAll();
             }
             finally
@@ -436,13 +382,112 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
+        private void PopulateCarbinTree()
+        {
+            treeView.BeginUpdate();
+            treeView.Nodes.Clear();
+            propertyGrid.SelectedObject = null;
+
+            if (currentCarbin == null || currentCarbin.Scene == null)
+            {
+                treeView.EndUpdate();
+                return;
+            }
+
+            var scene = currentCarbin.Scene;
+            TreeNode root = new TreeNode($"Scene (v{scene.Version}) - {scene.Series}");
+            root.Tag = scene;
+
+            // Info Node
+            TreeNode infoNode = new TreeNode("Info");
+            infoNode.Nodes.Add($"Ordinal: {scene.Ordinal}");
+            infoNode.Nodes.Add($"MediaName: {scene.MediaName}");
+            infoNode.Nodes.Add($"Skeleton: {scene.SkeletonPath}");
+            infoNode.Nodes.Add($"Strict Build: {scene.BuildStrict}");
+            infoNode.Nodes.Add($"Build GUID: {scene.BuildGuid}");
+            root.Nodes.Add(infoNode);
+
+            // Non-Upgradable Parts
+            TreeNode nonUpgNode = new TreeNode($"Non-Upgradable Parts ({scene.NonUpgradableParts.Count})");
+            foreach (var entry in scene.NonUpgradableParts)
+            {
+                TreeNode partNode = new TreeNode($"{entry.Type} (v{entry.Part.Version})");
+                partNode.Tag = entry.Part;
+
+                foreach (var model in entry.Part.Models)
+                {
+                    partNode.Nodes.Add(CreateCarRenderModelNode(model));
+                }
+                nonUpgNode.Nodes.Add(partNode);
+            }
+            root.Nodes.Add(nonUpgNode);
+
+            // Upgradable Parts
+            TreeNode upgNode = new TreeNode($"Upgradable Parts ({scene.UpgradableParts.Count})");
+            foreach (var upg in scene.UpgradableParts)
+            {
+                TreeNode partNode = new TreeNode($"{upg.Type} (v{upg.Version})");
+                partNode.Tag = upg;
+
+                TreeNode upgradesNode = new TreeNode($"Upgrades ({upg.Upgrades.Count})");
+                foreach (var upgrade in upg.Upgrades)
+                {
+                    TreeNode uNode = new TreeNode($"Upgrade (ID: {upgrade.Id}) Level {upgrade.Level}");
+                    uNode.Tag = upgrade;
+                    foreach (var model in upgrade.Models)
+                    {
+                        uNode.Nodes.Add(CreateCarRenderModelNode(model));
+                    }
+                    upgradesNode.Nodes.Add(uNode);
+                }
+                partNode.Nodes.Add(upgradesNode);
+
+                if (upg.SharedModels.Count > 0)
+                {
+                    TreeNode sharedNode = new TreeNode($"Shared Models ({upg.SharedModels.Count})");
+                    foreach (var shared in upg.SharedModels)
+                    {
+                        TreeNode sNode = CreateCarRenderModelNode(shared.Model);
+                        sNode.Text = $"Shared Model (Ids: {string.Join(",", shared.UpgradeIds)})";
+                        sharedNode.Nodes.Add(sNode);
+                    }
+                    partNode.Nodes.Add(sharedNode);
+                }
+                upgNode.Nodes.Add(partNode);
+            }
+            root.Nodes.Add(upgNode);
+
+            treeView.Nodes.Add(root);
+            root.Expand();
+            treeView.EndUpdate();
+        }
+
+        private TreeNode CreateCarRenderModelNode(ForzaTools.CarScene.CarRenderModel model)
+        {
+            TreeNode node = new TreeNode($"Model: {model.Path}");
+            node.Tag = model;
+            node.Nodes.Add($"Bone: {model.BoneName} ({model.BoneId})");
+            node.Nodes.Add($"LODs: {model.LODDetails}");
+            node.Nodes.Add($"DrawGroups: {model.DrawGroups}");
+
+            if (model.MaterialOverrides.Count > 0)
+                node.Nodes.Add(new TreeNode($"Material Overrides ({model.MaterialOverrides.Count})") { Tag = model.MaterialOverrides });
+
+            if (model.AOMapInfos.Count > 0)
+            {
+                TreeNode aoNode = new TreeNode($"AO Maps ({model.AOMapInfos.Count})");
+                foreach (var ao in model.AOMapInfos)
+                    aoNode.Nodes.Add(new TreeNode($"{ao.Path} ({ao.PartType})") { Tag = ao });
+                node.Nodes.Add(aoNode);
+            }
+
+            return node;
+        }
+
         private string GetBlobName(BundleBlob blob, int index)
         {
-            // Try to get Name Metadata first
             var nameMeta = blob.GetMetadataByTag<ForzaTools.Bundles.Metadata.NameMetadata>(BundleMetadata.TAG_METADATA_Name);
             string metaName = nameMeta?.Name;
-
-            // Base type name
             string typeName = blob.GetType().Name.Replace("Blob", "");
 
             StringBuilder sb = new StringBuilder();
@@ -453,7 +498,6 @@ namespace ForzaTools.ModelBinEditor
                 sb.Append($" : {metaName}");
             }
 
-            // Add specific details based on Blob Type
             if (blob is MeshBlob mesh)
             {
                 sb.Append($" (LODs: {mesh.LODLevel1}-{mesh.LODLevel2}, Vtx: {mesh.VertexBuffers.Count})");
@@ -463,9 +507,7 @@ namespace ForzaTools.ModelBinEditor
                 sb.Append($" ({tex.GetContents()?.Length ?? 0} bytes)");
             }
 
-            // --- ADDED: Version Number ---
             sb.Append($" [v{blob.VersionMajor}.{blob.VersionMinor}]");
-
             return sb.ToString();
         }
 
@@ -473,22 +515,13 @@ namespace ForzaTools.ModelBinEditor
         {
             try
             {
-                // Convert the uint Tag to a 4-character string (e.g. 0x4E616D65 -> "Name")
                 byte[] bytes = BitConverter.GetBytes(meta.Tag);
                 if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
-
                 string tagStr = Encoding.ASCII.GetString(bytes).Trim('\0', ' ');
-
-                // If the tag contains non-printable characters, show Hex instead
-                if (tagStr.Any(c => c < 32 || c > 126))
-                    return $"Metadata: 0x{meta.Tag:X8}";
-
+                if (tagStr.Any(c => c < 32 || c > 126)) return $"Metadata: 0x{meta.Tag:X8}";
                 return $"Metadata: {tagStr}";
             }
-            catch
-            {
-                return $"Metadata: 0x{meta.Tag:X8}";
-            }
+            catch { return $"Metadata: 0x{meta.Tag:X8}"; }
         }
 
         private void TreeView_AfterSelect(object sender, TreeViewEventArgs e)
@@ -500,38 +533,122 @@ namespace ForzaTools.ModelBinEditor
             byte[] data = null;
             long offset = 0;
 
-            if (obj is BundleBlob blob)
-            {
-                data = blob.GetContents();
-                offset = blob.FileOffset;
-            }
-            else if (obj is BundleMetadata meta)
-            {
-                data = meta.GetContents();
-                offset = meta.FileOffset;
-            }
+            if (obj is BundleBlob blob) { data = blob.GetContents(); offset = blob.FileOffset; }
+            else if (obj is BundleMetadata meta) { data = meta.GetContents(); offset = meta.FileOffset; }
 
-            // Push data to the hex control created in step 1
             if (embeddedHexView != null)
             {
                 if (data != null)
                 {
                     embeddedHexView.Data = data;
                     embeddedHexView.StartOffset = offset;
-                    embeddedHexView.ReadOnly = true; // Safer for browse mode
+                    embeddedHexView.ReadOnly = true; // Browse mode
                 }
                 else
                 {
-                    embeddedHexView.Data = new byte[0]; // Clear if no data
+                    embeddedHexView.Data = new byte[0];
                 }
             }
         }
+
         private void TreeView_NodeMouseClick(object sender, TreeNodeMouseClickEventArgs e)
         {
             if (e.Button == MouseButtons.Right) treeView.SelectedNode = e.Node;
         }
 
-        // --- HEX VIEWERS (Unchanged) ---
+        // --- Conversions ---
+
+        private void ConvertButton_Click(object sender, EventArgs e)
+        {
+            if (currentBundle == null) return;
+
+            var selectedProfile = targetVersionComboBox.SelectedItem as GameProfile;
+            if (selectedProfile == null || !selectedProfile.Name.Contains("Horizon 5"))
+            {
+                if (MessageBox.Show("The conversion logic is specifically designed for Forza Horizon 5.\nContinue anyway?", "Version Mismatch", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+            }
+
+            try
+            {
+                // Using shared logic in ModelConverter
+                bool modified = ModelConverter.MakeFH5Compatible(currentBundle);
+
+                if (modified)
+                {
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        currentBundle.Serialize(ms);
+                        ms.Position = 0;
+
+                        var newBundle = new Bundle();
+                        newBundle.Load(ms);
+                        currentBundle = newBundle;
+                        PopulateTree();
+                    }
+                    MessageBox.Show("Conversion to FH5 format completed successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    LogToConsole("Model converted to FH5 format.", Color.Cyan);
+                }
+                else
+                {
+                    MessageBox.Show("Model appears to already be compatible with FH5.", "No Changes Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    LogToConsole("Conversion skipped (Already FH5 compatible).", Color.Yellow);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Conversion failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogToConsole($"Conversion failed: {ex.Message}", Color.Red);
+            }
+        }
+
+        private void BatchConvert_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "Zip Archives (*.zip)|*.zip";
+                ofd.Multiselect = true;
+                ofd.Title = "Select ZIP files for Batch Conversion";
+
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    using (var verDialog = new BatchConversionDialog())
+                    {
+                        if (verDialog.ShowDialog() == DialogResult.OK)
+                        {
+                            var processor = new BatchArchiveProcessor();
+
+                            consoleBox.Clear();
+                            LogToConsole($"Starting batch conversion for {ofd.FileNames.Length} archive(s)...", Color.Cyan);
+
+                            Task.Run(() =>
+                            {
+                                try
+                                {
+                                    processor.ProcessArchives(ofd.FileNames, (msg, type) =>
+                                    {
+                                        Color msgColor = Color.LightGray;
+                                        if (type == "ERROR") msgColor = Color.Red;
+                                        else if (type == "SUCCESS") msgColor = Color.LimeGreen;
+                                        else if (type == "WARN") msgColor = Color.Yellow;
+                                        else if (type == "INFO") msgColor = Color.White;
+
+                                        LogToConsole(msg, msgColor);
+                                    });
+                                }
+                                catch (Exception ex)
+                                {
+                                    LogToConsole($"CRITICAL ERROR: {ex.Message}", Color.Red);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Hex View Popups ---
+
         private void ViewHex_Click(object sender, EventArgs e)
         {
             if (treeView.SelectedNode?.Tag == null) return;
@@ -547,32 +664,7 @@ namespace ForzaTools.ModelBinEditor
             var hex = new HexEditorForm(data, offset);
             if (hex.ShowDialog() == DialogResult.OK)
             {
-                var field = obj.GetType().GetField("_data", BindingFlags.NonPublic | BindingFlags.Instance)
-                            ?? obj.GetType().BaseType.GetField("_data", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (field != null) field.SetValue(obj, hex.ModifiedData);
-
-                var pubProp = obj.GetType().GetProperty("Data");
-                if (pubProp != null && pubProp.PropertyType == typeof(byte[])) pubProp.SetValue(obj, hex.ModifiedData);
-
-                if (obj is BundleBlob targetBlob)
-                {
-                    using (var ms = new MemoryStream(hex.ModifiedData))
-                    using (var bs = new BinaryStream(ms))
-                    {
-                        if (targetBlob is MeshBlob mb) mb.VertexBuffers.Clear();
-                        targetBlob.ReadBlobData(bs);
-                    }
-                    propertyGrid.Refresh();
-                }
-                else if (obj is BundleMetadata targetMeta)
-                {
-                    using (var ms = new MemoryStream(hex.ModifiedData))
-                    using (var bs = new BinaryStream(ms))
-                    {
-                        targetMeta.ReadMetadataData(bs);
-                    }
-                    propertyGrid.Refresh();
-                }
+                UpdateObjectData(obj, hex.ModifiedData);
                 MessageBox.Show("Updated.");
             }
         }
@@ -607,6 +699,34 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
+        // --- Helpers ---
+
+        private void UpdateObjectData(object obj, byte[] newData)
+        {
+            var field = obj.GetType().GetField("_data", BindingFlags.NonPublic | BindingFlags.Instance)
+                        ?? obj.GetType().BaseType.GetField("_data", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (field != null) field.SetValue(obj, newData);
+
+            var pubProp = obj.GetType().GetProperty("Data");
+            if (pubProp != null && pubProp.PropertyType == typeof(byte[])) pubProp.SetValue(obj, newData);
+
+            // Re-read structure if applicable
+            using (var ms = new MemoryStream(newData))
+            using (var bs = new BinaryStream(ms))
+            {
+                if (obj is BundleBlob blob)
+                {
+                    if (blob is MeshBlob mb) mb.VertexBuffers.Clear();
+                    blob.ReadBlobData(bs);
+                }
+                else if (obj is BundleMetadata meta)
+                {
+                    meta.ReadMetadataData(bs);
+                }
+            }
+            propertyGrid.Refresh();
+        }
+
         private byte[] ObjectToBytes(object obj)
         {
             if (obj is byte[] b) return b;
@@ -637,31 +757,6 @@ namespace ForzaTools.ModelBinEditor
             if (type == typeof(bool)) return BitConverter.ToBoolean(bytes, 0);
             if (type == typeof(string)) return Encoding.UTF8.GetString(bytes);
             return null;
-        }
-
-        private void SaveFile_Click(object sender, EventArgs e)
-        {
-            if (currentBundle == null) return;
-            using (SaveFileDialog sfd = new SaveFileDialog())
-            {
-                sfd.Filter = "ModelBin|*.modelbin|All|*.*";
-                if (!string.IsNullOrEmpty(currentFilePath)) sfd.FileName = Path.GetFileName(currentFilePath);
-                else sfd.FileName = "file.modelbin";
-
-                if (sfd.ShowDialog() == DialogResult.OK)
-                {
-                    try
-                    {
-                        using (var fs = new FileStream(sfd.FileName, FileMode.Create))
-                            currentBundle.Serialize(fs);
-                        MessageBox.Show("Saved successfully.");
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"Error saving: {ex.Message}");
-                    }
-                }
-            }
         }
     }
 }
