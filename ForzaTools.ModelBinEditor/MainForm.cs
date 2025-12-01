@@ -18,6 +18,7 @@ namespace ForzaTools.ModelBinEditor
     {
         // --- Fields ---
         private Bundle currentBundle;
+        private ForzaTools.CarScene.CarbinFile currentCarbin; // Added missing field for Carbin support
         private string currentFilePath;
         private ContextMenuStrip propertyGridContextMenu;
         private ToolStripMenuItem viewPropertyHexMenuItem;
@@ -31,9 +32,6 @@ namespace ForzaTools.ModelBinEditor
         private System.Windows.Forms.TabPage propertyPage;
         private System.Windows.Forms.TabPage hexPage;
         private ForzaTools.ModelBinEditor.HexViewControl embeddedHexView;
-
-        //carbin support
-        private ForzaTools.CarScene.CarbinFile currentCarbin;
 
         // Console Controls
         private RichTextBox consoleBox;
@@ -50,6 +48,13 @@ namespace ForzaTools.ModelBinEditor
         public MainForm()
         {
             InitializeComponent();
+
+            // --- UI SIZE ADJUSTMENTS ---
+            // Set larger default size (Double width ~2000, Taller ~1000)
+            this.Size = new Size(1900, 1000);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            // ---------------------------
+
             InitializePropertyGridContextMenu();
             InitializeTargetVersionDropdown();
             InitializeEnhancedUI();     // Build tabs, toolbar, hex view
@@ -149,7 +154,9 @@ namespace ForzaTools.ModelBinEditor
         private void InitializeConsoleWindow()
         {
             consolePanel = new Panel();
-            consolePanel.Height = 150;
+            // --- CONSOLE SIZE ADJUSTMENT ---
+            consolePanel.Height = 300; // Increased from 150 to 300
+            // -------------------------------
             consolePanel.Dock = DockStyle.Bottom;
             consolePanel.Padding = new Padding(5);
             consolePanel.BackColor = SystemColors.ControlDark;
@@ -158,7 +165,7 @@ namespace ForzaTools.ModelBinEditor
             consoleBox.Dock = DockStyle.Fill;
             consoleBox.BackColor = Color.FromArgb(30, 30, 30);
             consoleBox.ForeColor = Color.LightGray;
-            consoleBox.Font = new Font("Consolas", 9f);
+            consoleBox.Font = new Font("Consolas", 10f); // Slightly larger font for readability
             consoleBox.ReadOnly = true;
             consoleBox.WordWrap = false;
             consoleBox.ScrollBars = RichTextBoxScrollBars.Vertical;
@@ -214,13 +221,12 @@ namespace ForzaTools.ModelBinEditor
                         currentCarbin.Load(fs);
                     }
                     currentBundle = null; // Clear modelbin data
-                    PopulateCarbinTree(); // New method
+                    PopulateCarbinTree();
                     this.Text = $"Forza ModelBin Editor - {Path.GetFileName(path)} (Scene v{currentCarbin.Scene.Version})";
                     LogToConsole($"Loaded Scene {path}", Color.LimeGreen);
                 }
                 else
                 {
-                    // Existing modelbin logic
                     var newBundle = new Bundle();
                     using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
                     {
@@ -228,7 +234,7 @@ namespace ForzaTools.ModelBinEditor
                     }
                     currentBundle = newBundle;
                     currentCarbin = null;
-                    PopulateTree(); // Existing method
+                    PopulateTree();
                     this.Text = $"Forza ModelBin Editor - {Path.GetFileName(path)}";
                     LogToConsole($"Loaded Bundle {path}", Color.LimeGreen);
                 }
@@ -242,7 +248,7 @@ namespace ForzaTools.ModelBinEditor
 
         private void SaveFile_Click(object sender, EventArgs e)
         {
-            if (currentBundle == null && currentCarbin == null) return; // Check for both
+            if (currentBundle == null && currentCarbin == null) return;
 
             using (SaveFileDialog sfd = new SaveFileDialog())
             {
@@ -276,7 +282,7 @@ namespace ForzaTools.ModelBinEditor
 
         private void Exit_Click(object sender, EventArgs e) => Close();
 
-        // --- Tree View Logic ---
+        // --- Tree View Logic (ModelBin) ---
 
         private void PopulateTree()
         {
@@ -322,7 +328,6 @@ namespace ForzaTools.ModelBinEditor
                     if (metaRoot.Nodes.Count > 0) blobNode.Nodes.Add(metaRoot);
 
                     // 2. Special Blob Logic
-                    // Skeleton Bones
                     if (blob is SkeletonBlob skel)
                     {
                         TreeNode bonesRoot = new TreeNode($"BonesList ({skel.Bones.Count} items)");
@@ -339,7 +344,6 @@ namespace ForzaTools.ModelBinEditor
                         if (bonesRoot.Nodes.Count > 0) blobNode.Nodes.Add(bonesRoot);
                     }
 
-                    // Nested Bundle in Material
                     if (blob is MaterialBlob matBlob && matBlob.Bundle != null)
                     {
                         TreeNode subBundleNode = new TreeNode($"Nested Bundle ({matBlob.Bundle.Blobs.Count} items)");
@@ -389,6 +393,8 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
+        // --- Tree View Logic (Carbin) ---
+
         private void PopulateCarbinTree()
         {
             treeView.BeginUpdate();
@@ -405,7 +411,6 @@ namespace ForzaTools.ModelBinEditor
             TreeNode root = new TreeNode($"Scene (v{scene.Version}) - {scene.Series}");
             root.Tag = scene;
 
-            // Info Node
             TreeNode infoNode = new TreeNode("Info");
             infoNode.Nodes.Add($"Ordinal: {scene.Ordinal}");
             infoNode.Nodes.Add($"MediaName: {scene.MediaName}");
@@ -414,7 +419,6 @@ namespace ForzaTools.ModelBinEditor
             infoNode.Nodes.Add($"Build GUID: {scene.BuildGuid}");
             root.Nodes.Add(infoNode);
 
-            // Non-Upgradable Parts
             TreeNode nonUpgNode = new TreeNode($"Non-Upgradable Parts ({scene.NonUpgradableParts.Count})");
             foreach (var entry in scene.NonUpgradableParts)
             {
@@ -429,7 +433,6 @@ namespace ForzaTools.ModelBinEditor
             }
             root.Nodes.Add(nonUpgNode);
 
-            // Upgradable Parts
             TreeNode upgNode = new TreeNode($"Upgradable Parts ({scene.UpgradableParts.Count})");
             foreach (var upg in scene.UpgradableParts)
             {
@@ -567,26 +570,20 @@ namespace ForzaTools.ModelBinEditor
 
         private void ConvertButton_Click(object sender, EventArgs e)
         {
-            // Safety Check: Ensure at least one file type is loaded
             if (currentBundle == null && currentCarbin == null)
             {
                 MessageBox.Show("No file loaded to convert.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // --- CARBIN CONVERSION LOGIC ---
+            // --- CARBIN CONVERSION ---
             if (currentCarbin != null)
             {
                 try
                 {
                     LogToConsole("Starting .carbin conversion...", Color.White);
-
-                    // Perform conversion (in-memory)
                     currentCarbin.ConvertToFH5();
-
-                    // Refresh UI to show new values/structure
                     PopulateCarbinTree();
-
                     this.Text = $"Forza ModelBin Editor - {Path.GetFileName(currentFilePath)} (Converted to FH5)";
                     LogToConsole("Carbin file converted to Forza Horizon 5 format.", Color.Cyan);
                     MessageBox.Show("Carbin conversion complete.\nPlease use 'Save As' to write the file to disk.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -596,10 +593,10 @@ namespace ForzaTools.ModelBinEditor
                     LogToConsole($"Carbin conversion failed: {ex.Message}", Color.Red);
                     MessageBox.Show($"Carbin conversion failed:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-                return; // Exit after handling carbin
+                return;
             }
 
-            // --- MODELBIN BUNDLE LOGIC (Existing) ---
+            // --- MODELBIN CONVERSION ---
             if (currentBundle != null)
             {
                 var selectedProfile = targetVersionComboBox.SelectedItem as GameProfile;
@@ -615,7 +612,6 @@ namespace ForzaTools.ModelBinEditor
 
                     if (modified)
                     {
-                        // Serialize to memory to refresh internal offsets/structure
                         using (MemoryStream ms = new MemoryStream())
                         {
                             currentBundle.Serialize(ms);

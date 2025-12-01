@@ -13,117 +13,156 @@ namespace ForzaTools.ModelBinEditor
     {
         public static bool MakeFH5Compatible(Bundle bundle)
         {
-            // 1. Get Mesh and Layout
-            MeshBlob meshBlob = (MeshBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_Mesh, 0);
-            if (meshBlob == null) throw new Exception("Structure Error: No MeshBlob found.");
+            bool isModified = false;
 
-            VertexLayoutBlob layout = (VertexLayoutBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexLayout, meshBlob.VertexLayoutIndex);
+            // --- A. MODEL BLOB UPDATE (Legacy -> FH5 v1.3) ---
+            // FH5 requires ModelBlob version 1.3 (Adds DecompressFlags and UnkV1_3 padding)
+            ModelBlob modelBlob = (ModelBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_Model, 0);
+            if (modelBlob != null)
+            {
+                if (modelBlob.VersionMajor == 1 && modelBlob.VersionMinor < 3)
+                {
+                    modelBlob.VersionMinor = 3;
+                    isModified = true;
+                }
+            }
+
+            // --- B. MESH BLOB CONVERSION (Legacy -> FH5 v1.9) ---
+            // Iterate through ALL blobs to find every MeshBlob.
+            foreach (var blob in bundle.Blobs)
+            {
+                if (blob is MeshBlob mesh)
+                {
+                    // FH5 requires MeshBlob version 1.9 with a 4-short MaterialIds array.
+                    if (mesh.VersionMajor == 1 && mesh.VersionMinor < 9)
+                    {
+                        // Create the v1.9 structure: [0xFFFF, MaterialID, 0xFFFF, 0xFFFF]
+                        mesh.MaterialIds = new short[] { -1, mesh.MaterialId, -1, -1 };
+
+                        // Update version to 1.9 so MeshBlob.SerializeBlobData writes the array
+                        mesh.VersionMinor = 9;
+
+                        isModified = true;
+                    }
+                }
+            }
+
+            // --- C. TANGENT COMPATIBILITY CHECK ---
+            // We check the Vertex Layout associated with the main mesh (Index 0).
+            MeshBlob mainMesh = (MeshBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_Mesh, 0);
+            if (mainMesh == null)
+            {
+                // If there are no meshes at all, we return modification status of A/B
+                return isModified;
+            }
+
+            VertexLayoutBlob layout = (VertexLayoutBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexLayout, mainMesh.VertexLayoutIndex);
             if (layout == null) throw new Exception("Structure Error: VertexLayoutBlob not found.");
 
-            // 2. Check Compatibility
-            // FH5 requires a 3rd Tangent (SemanticIndex 2). 
-            if (layout.Elements.Any(e => layout.SemanticNames[e.SemanticNameIndex] == "TANGENT" && e.SemanticIndex == 2))
-                return false; // Already Compatible
+            // FH5 requires a 3rd Tangent (SemanticIndex 2).
+            bool hasThirdTangent = layout.Elements.Any(e =>
+                layout.SemanticNames[e.SemanticNameIndex] == "TANGENT" && e.SemanticIndex == 2);
 
-            // 3. Identify Target Buffer and Slot
-            // We want to insert the new data into the same buffer that holds the existing Tangents.
-            // We look for the LAST tangent to append after it.
-            int insertionLayoutIndex = -1;
-            int targetInputSlot = -1;
-
-            for (int i = 0; i < layout.Elements.Count; i++)
+            // Only proceed with Tangent logic if it's missing
+            if (!hasThirdTangent)
             {
-                var el = layout.Elements[i];
-                if (layout.SemanticNames[el.SemanticNameIndex] == "TANGENT")
+                // 1. Identify Target Buffer and Slot
+                int insertionLayoutIndex = -1;
+                int targetInputSlot = -1;
+
+                for (int i = 0; i < layout.Elements.Count; i++)
                 {
-                    targetInputSlot = el.InputSlot;
-                    insertionLayoutIndex = i + 1; // Insert after this one
-                }
-            }
-
-            if (targetInputSlot == -1)
-                throw new Exception("Error: No existing TANGENT found to clone.");
-
-            // Find the VertexBuffer usage for this slot
-            var vbUsage = meshBlob.VertexBuffers.FirstOrDefault(vb => vb.InputSlot == targetInputSlot);
-            if (vbUsage == null) throw new Exception($"Error: Mesh does not use InputSlot {targetInputSlot}.");
-
-            // Find the actual Blob using the ID from usage
-            VertexBufferBlob targetBuffer = FindBufferById(bundle, vbUsage.Index);
-            if (targetBuffer == null) throw new Exception($"Error: Could not find VertexBufferBlob with ID {vbUsage.Index}.");
-
-            // 4. Calculate Data Offset (Crucial Step)
-            // We must calculate the offset relative ONLY to this specific buffer (InputSlot).
-            int insertByteOffset = 0;
-
-            // Sum size of all elements in this slot that come BEFORE our insertion point
-            for (int i = 0; i < insertionLayoutIndex; i++)
-            {
-                var el = layout.Elements[i];
-                if (el.InputSlot == targetInputSlot)
-                {
-                    insertByteOffset += GetSizeOfElementFormat(layout.PackedFormats[i]);
-                }
-            }
-
-            // 5. Create New Element Definition
-            var newElement = new D3D12_INPUT_LAYOUT_DESC()
-            {
-                SemanticNameIndex = (short)layout.SemanticNames.IndexOf("TANGENT"),
-                SemanticIndex = 2,
-                Format = DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM, // FH5 Format (4 bytes)
-                InputSlot = (short)targetInputSlot,
-                AlignedByteOffset = -1,
-                InstanceDataStepRate = 0,
-                InputSlotClass = 0 // Per Vertex
-            };
-
-            // 6. Apply Changes to Layout
-            if (insertionLayoutIndex >= layout.Elements.Count)
-            {
-                layout.Elements.Add(newElement);
-                layout.PackedFormats.Add(DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS);
-            }
-            else
-            {
-                layout.Elements.Insert(insertionLayoutIndex, newElement);
-                layout.PackedFormats.Insert(insertionLayoutIndex, DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS);
-            }
-            layout.Flags |= 0x80; // FH5 Requirement
-
-            // 7. Apply Changes to Buffer Data
-            if (targetBuffer.Header.Data == null) throw new Exception("Buffer has no data.");
-
-            // The data we are inserting is 4 bytes (R10G10B10A2 = 32 bits)
-            byte[] placeholderData = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
-
-            for (int i = 0; i < targetBuffer.Header.Data.Length; i++)
-            {
-                var row = new List<byte>(targetBuffer.Header.Data[i]);
-
-                // Safety: If offset equals count, we append. If less, we insert.
-                // If greater, the calculated offset is wrong for this buffer.
-                if (insertByteOffset > row.Count)
-                {
-                    // Fallback strategy: If calculation failed (e.g. padding mismatch), 
-                    // assume we are appending to the end of the semantic block.
-                    // This is risky but fixes "Data Mismatch" crashes on weird models.
-                    insertByteOffset = row.Count;
+                    var el = layout.Elements[i];
+                    if (layout.SemanticNames[el.SemanticNameIndex] == "TANGENT")
+                    {
+                        targetInputSlot = el.InputSlot;
+                        insertionLayoutIndex = i + 1; // Insert after this one
+                    }
                 }
 
-                row.InsertRange(insertByteOffset, placeholderData);
-                targetBuffer.Header.Data[i] = row.ToArray();
+                if (targetInputSlot == -1)
+                    throw new Exception("Error: No existing TANGENT found to clone.");
+
+                // Find the VertexBuffer usage for this slot
+                var vbUsage = mainMesh.VertexBuffers.FirstOrDefault(vb => vb.InputSlot == targetInputSlot);
+                if (vbUsage == null) throw new Exception($"Error: Mesh does not use InputSlot {targetInputSlot}.");
+
+                // Find the actual Blob using the ID from usage
+                VertexBufferBlob targetBuffer = FindBufferById(bundle, vbUsage.Index);
+                if (targetBuffer == null) throw new Exception($"Error: Could not find VertexBufferBlob with ID {vbUsage.Index}.");
+
+                // 2. Calculate Data Offset
+                // We must calculate the offset relative ONLY to this specific buffer (InputSlot).
+                int insertByteOffset = 0;
+
+                // Sum size of all elements in this slot that come BEFORE our insertion point
+                for (int i = 0; i < insertionLayoutIndex; i++)
+                {
+                    var el = layout.Elements[i];
+                    if (el.InputSlot == targetInputSlot)
+                    {
+                        insertByteOffset += GetSizeOfElementFormat(layout.PackedFormats[i]);
+                    }
+                }
+
+                // 3. Create New Element Definition
+                var newElement = new D3D12_INPUT_LAYOUT_DESC()
+                {
+                    SemanticNameIndex = (short)layout.SemanticNames.IndexOf("TANGENT"),
+                    SemanticIndex = 2,
+                    Format = DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM, // FH5 Format (4 bytes)
+                    InputSlot = (short)targetInputSlot,
+                    AlignedByteOffset = -1,
+                    InstanceDataStepRate = 0,
+                    InputSlotClass = 0 // Per Vertex
+                };
+
+                // 4. Apply Changes to Layout
+                if (insertionLayoutIndex >= layout.Elements.Count)
+                {
+                    layout.Elements.Add(newElement);
+                    layout.PackedFormats.Add(DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS);
+                }
+                else
+                {
+                    layout.Elements.Insert(insertionLayoutIndex, newElement);
+                    layout.PackedFormats.Insert(insertionLayoutIndex, DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS);
+                }
+                layout.Flags |= 0x80; // FH5 Requirement
+
+                // 5. Apply Changes to Buffer Data
+                if (targetBuffer.Header.Data == null) throw new Exception("Buffer has no data.");
+
+                // The data we are inserting is 4 bytes (R10G10B10A2 = 32 bits)
+                byte[] placeholderData = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
+
+                for (int i = 0; i < targetBuffer.Header.Data.Length; i++)
+                {
+                    var row = new List<byte>(targetBuffer.Header.Data[i]);
+
+                    // Safety: If offset equals count, we append. If less, we insert.
+                    // If greater, the calculated offset is wrong for this buffer (likely padding mismatch).
+                    if (insertByteOffset > row.Count)
+                    {
+                        // Fallback strategy: Assume append if offset calculation failed
+                        insertByteOffset = row.Count;
+                    }
+
+                    row.InsertRange(insertByteOffset, placeholderData);
+                    targetBuffer.Header.Data[i] = row.ToArray();
+                }
+
+                // 6. Update Buffer Header Stride
+                // Add the size of the new element (4 bytes).
+                targetBuffer.Header.Stride += 4;
+
+                // Ensure element count is correct
+                targetBuffer.Header.NumElements = (byte)targetBuffer.Header.Data.Length;
+
+                isModified = true;
             }
 
-            // 8. Update Buffer Header Stride
-            // Instead of recalculating, we just ADD the size of the new element (4 bytes).
-            // This preserves existing padding/alignment which is critical for rendering.
-            targetBuffer.Header.Stride += 4;
-
-            // Ensure element count is correct
-            targetBuffer.Header.NumElements = (byte)targetBuffer.Header.Data.Length;
-
-            return true;
+            return isModified;
         }
 
         // --- Helpers ---
@@ -134,7 +173,6 @@ namespace ForzaTools.ModelBinEditor
             {
                 if (blob is VertexBufferBlob vb)
                 {
-                    // Retrieve ID from Metadata
                     var idMeta = blob.GetMetadataByTag<IdentifierMetadata>(BundleMetadata.TAG_METADATA_Identifier);
                     if (idMeta != null)
                     {
