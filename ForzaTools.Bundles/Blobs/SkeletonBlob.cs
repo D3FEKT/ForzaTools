@@ -1,20 +1,14 @@
 ﻿using Syroot.BinaryData;
-
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Runtime.CompilerServices;
 
 namespace ForzaTools.Bundles.Blobs;
 
 public class SkeletonBlob : BundleBlob
 {
     public List<Bone> Bones { get; set; } = new List<Bone>();
-    public int Unk { get; set; }
+    public byte[] UnkV1_0 { get; set; }
 
     public override void ReadBlobData(BinaryStream bs)
     {
@@ -30,7 +24,14 @@ public class SkeletonBlob : BundleBlob
             Bones.Add(bone);
         }
 
-        Unk = bs.ReadInt32();
+        if (IsAtLeastVersion(1, 0))
+        {
+            uint unkLength = bs.ReadUInt32();
+            if (unkLength > 0)
+            {
+                UnkV1_0 = bs.ReadBytes((int)unkLength);
+            }
+        }
     }
 
     public override void SerializeBlobData(BinaryStream bs)
@@ -43,11 +44,17 @@ public class SkeletonBlob : BundleBlob
             bs.WriteInt16(bone.ParentId);
             bs.WriteInt16(bone.FirstChildIndex);
             bs.WriteInt16(bone.NextIndex);
-
             bs.WriteMatrix4x4(bone.Matrix);
         }
 
-        bs.WriteInt32(Unk);
+        if (IsAtLeastVersion(1, 0))
+        {
+            bs.WriteUInt32((uint)(UnkV1_0?.Length ?? 0));
+            if (UnkV1_0 != null && UnkV1_0.Length > 0)
+            {
+                bs.WriteBytes(UnkV1_0);
+            }
+        }
     }
 }
 
@@ -59,8 +66,5 @@ public class Bone
     public short NextIndex { get; set; }
     public Matrix4x4 Matrix { get; set; }
 
-    public override string ToString()
-    {
-        return $"{Name} (Parent: {ParentId})";
-    }
+    public override string ToString() => $"{Name} (Parent: {ParentId})";
 }

@@ -1,16 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection.Metadata;
-using System.Text;
-using System.Threading.Tasks;
 using System.Diagnostics;
-
 using Syroot.BinaryData;
-
 using ForzaTools.Bundles.Metadata;
-using static System.Reflection.Metadata.BlobBuilder;
-using System.Xml.Linq;
 
 namespace ForzaTools.Bundles;
 
@@ -21,6 +13,12 @@ public abstract class BundleBlob
     public uint Tag { get; set; }
     public byte VersionMajor { get; set; }
     public byte VersionMinor { get; set; }
+
+    public uint CompressedSize { get; set; }
+    public uint UncompressedSize { get; set; }
+
+    // Added: Store the original file offset for hex viewing
+    public long FileOffset { get; set; }
 
     public List<BundleMetadata> Metadatas { get; set; } = new List<BundleMetadata>();
 
@@ -46,10 +44,13 @@ public abstract class BundleBlob
         uint metadataCount = bs.ReadUInt16();
         uint metadataOffset = bs.ReadUInt32();
         uint dataOffset = bs.ReadUInt32();
-        uint dataSize = bs.ReadUInt32();
-        bs.ReadUInt32();
+
+        CompressedSize = bs.ReadUInt32();
+        UncompressedSize = bs.ReadUInt32();
 
         long basePos = bs.Position;
+
+        // Read Metadata
         for (int i = 0; i < metadataCount; i++)
         {
             bs.Position = baseBundleOffset + metadataOffset + (i * BundleMetadata.InfoSize);
@@ -57,17 +58,27 @@ public abstract class BundleBlob
             bs.Position -= 4;
 
             BundleMetadata metadata = GetMetadataObjectByTag(metadataTag);
-            metadata.Read(bs);
-
-            Metadatas.Add(metadata);
+            if (metadata != null)
+            {
+                metadata.Read(bs);
+                Metadatas.Add(metadata);
+            }
+            else
+            {
+                // Skip unknown
+                // throw new NotImplementedException($"Unimplemented metadata tag {metadataTag:X8}");
+            }
         }
 
+        // Read Blob Data
         bs.Position = baseBundleOffset + dataOffset;
-        _data = bs.ReadBytes((int)dataSize);
+        this.FileOffset = bs.Position; // Save offset
+
+        uint sizeToRead = UncompressedSize > 0 ? UncompressedSize : CompressedSize;
+        _data = bs.ReadBytes((int)sizeToRead);
 
         bs.Position = baseBundleOffset + dataOffset;
         ReadBlobData(bs);
-
     }
 
     public abstract void ReadBlobData(BinaryStream bs);
@@ -83,11 +94,11 @@ public abstract class BundleBlob
             BundleMetadata.TAG_METADATA_Atlas => new AtlasMetadata(),
             BundleMetadata.TAG_METADATA_BBox => new BoundaryBoxMetadata(),
             BundleMetadata.TAG_METADATA_TextureContentHeader => new TextureContentHeaderMetadata(),
-            BundleMetadata.TAG_METADATA_TRef => new TextureReferenceMetadata(),
+            BundleMetadata.TAG_METADATA_TRef => new TextureReferencesMetadata(),
+            BundleMetadata.TAG_METADATA_ACMR => new ACMRMetadata(),
+            BundleMetadata.TAG_METADATA_VDCL => new VDCLMetadata(),
             BundleMetadata.TAG_METADATA_BLEN => new BlendMetadata(),
-            BundleMetadata.TAG_METADATA_VDCL => new VertexDeclarationMetadata(),
-
-            _ => throw new NotImplementedException($"Unimplemented metadata tag {tag:X8}"),
+            _ => null,
         };
     }
 
@@ -115,7 +126,7 @@ public abstract class BundleBlob
             ulong metadataSize = (ulong)(lastDataPos - dataStartOffset);
             Debug.Assert(metadataSize <= ushort.MaxValue);
 
-            ushort flags = (ushort)(metadataSize << 4 | (ushort)(metadata.Version & 0b1111)); // 12 bits size, 4 bits unk
+            ushort flags = (ushort)(metadataSize << 4 | (ushort)(metadata.Version & 0b1111));
             bs.WriteUInt16(flags);
 
             Debug.Assert(relativeOffset <= ushort.MaxValue);
@@ -129,7 +140,7 @@ public abstract class BundleBlob
 
     public bool IsAtMostVersion(byte versionMajor, byte versionMinor)
     {
-        return VersionMajor != versionMajor && (VersionMajor != versionMajor || versionMinor > 2);
+        return VersionMajor < versionMajor || (VersionMajor == versionMajor && VersionMinor <= versionMinor);
     }
 
     public bool IsAtLeastVersion(byte versionMajor, byte versionMinor)

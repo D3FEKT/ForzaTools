@@ -1,13 +1,5 @@
 ﻿using Syroot.BinaryData;
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Numerics;
-using System.Runtime.InteropServices;
-
 namespace ForzaTools.Bundles.Blobs;
 
 public class MaterialResourceBlob : BundleBlob
@@ -16,6 +8,8 @@ public class MaterialResourceBlob : BundleBlob
 
     public override void ReadBlobData(BinaryStream bs)
     {
+        // Template: _7BitString path;
+        // _7BitString corresponds to .NET's 7-bit encoded int length + string
         Path = bs.ReadString(StringCoding.VariableByteCount);
     }
 

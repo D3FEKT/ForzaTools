@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Syroot.BinaryData" Version="5.2.2" />
+    <PackageReference Include="Syroot.BinaryData.Serialization" Version="5.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ForzaTools.Bundles">
+      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\ForzaTools.Bundles.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

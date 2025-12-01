@@ -2,7 +2,7 @@
 
 namespace ForzaTools.Bundles.Blobs;
 
-public class IndexBufferBlob : BundleBlob
+public class SkinBufferBlob : BundleBlob
 {
     public BufferHeader Header { get; set; } = new();
 

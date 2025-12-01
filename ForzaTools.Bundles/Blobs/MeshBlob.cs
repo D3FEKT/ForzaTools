@@ -1,160 +1,180 @@
 ﻿using Syroot.BinaryData;
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Runtime.CompilerServices;
 
 namespace ForzaTools.Bundles.Blobs;
 
 public class MeshBlob : BundleBlob
 {
-    public short UnkV9_1 { get; set; }
-    public short UnkV9_MaterialID { get; set; }
-    public short UnkV9_3 { get; set; }
-    public short UnkV9_4 { get; set; }
+    // v1.9 Material IDs
+    public short[] MaterialIds { get; set; }
 
-    public short Unk1 { get; set; }
-    public short Unk2 { get; set; }
-    public byte LODLevel1 { get; set; }
-    public byte LODLevel2 { get; set; }
-    public short Unk3 { get; set; }
-    public byte Unk4 { get; set; }
+    // Legacy Material ID (pre-v1.9)
+    public short MaterialId { get; set; }
 
-    public byte UnkV2 { get; set; }
-    public byte UnkV2_2 { get; set; }
-    public byte UnkV3 { get; set; }
+    public short RigidBoneIndex { get; set; }
+    public byte LODLevel1 { get; set; } // Lowest LOD
+    public byte LODLevel2 { get; set; } // Highest LOD
 
-    public byte Unk5 { get; set; }
-    public short Unk6 { get; set; }
-    public int Unk7 { get; set; }
-    public int Unk8 { get; set; }
+    // Combined LODFlags (kept as raw for now, or could be split if needed)
+    public ushort LODFlags { get; set; }
 
-    public uint FaceStartIndex { get; set; }
-    public uint UnkColor { get; set; }
-    public uint FaceCount { get; set; }
-    public uint VertexStartIndex { get; set; }
+    // Bucket Flags (Bitfield)
+    public bool IsOpaque { get; set; }           // Bit 0
+    public bool IsDecal { get; set; }            // Bit 1
+    public bool IsTransparent { get; set; }      // Bit 2
+    public bool IsShadow { get; set; }           // Bit 3
+    public bool IsNotShadow { get; set; }        // Bit 4
+    public bool IsAlphaToCoverage { get; set; }  // Bit 5
 
-    public float UnkV6 { get; set; }
-    public uint NumVerts { get; set; }
+    public byte BucketOrder { get; set; }
 
-    public uint Unk9 { get; set; }
+    // v1.2
+    public byte SkinningElementsCount { get; set; }
+    public byte MorphWeightsCount { get; set; }
 
-    public List<UnkEntry> UnkEntries { get; set; } = new List<UnkEntry>();
-    public class UnkEntry
-    {
-        public uint a;
-        public uint b;
-        public uint c;
-        public uint d;
+    // v1.3
+    public bool IsMorphDamage { get; set; }
 
-        public UnkEntry(uint a, uint b, uint c, uint d)
-        {
-            this.a = a;
-            this.b = b;
-            this.c = c;
-            this.d = d;
-        }
-    }
+    public bool Is32BitIndices { get; set; }
+    public ushort Topology { get; set; }
+    public int IndexBufferIndex { get; set; }
+    public int IndexBufferOffset { get; set; }
+
+    public int IndexBufferDrawOffset { get; set; } // StartIndex
+    public int IndexedVertexOffset { get; set; }   // BaseVertex
+    public int IndexCount { get; set; }
+    public int PrimCount { get; set; }             // FaceCount
+
+    // v1.6
+    public float ACMR { get; set; } // Average Cache Miss Ratio
+    public uint ReferencedVertexCount { get; set; }
 
     public int VertexLayoutIndex { get; set; }
-    public int UnkV4 { get; set; }
 
-    public int[] UnkArr { get; set; }
+    public List<VertexBufferUsage> VertexBuffers { get; set; } = new();
 
-    public uint UnkV1 { get; set; }
+    // v1.4
+    public int MorphDataBufferIndex { get; set; }
+    public int SkinningDataBufferIndex { get; set; }
 
-    public Vector4[] Vecs { get; set; }
-    public Vector4 VertexScale { get; set; }
-    public Vector4 VertexPosition { get; set; }
+    public int[] ConstantBufferIndices { get; set; }
+
+    // v1.1
+    public uint SourceMeshIndex { get; set; }
+
+    // v1.5 TexCoord Transform (5 entries of Vector4-like struct)
+    public Vector4[] TexCoordTransforms { get; set; }
+
+    // v1.8
+    public Vector4 PositionScale { get; set; }
+    public Vector4 PositionTranslate { get; set; }
+
+    public class VertexBufferUsage
+    {
+        public int Index { get; set; }
+        public uint InputSlot { get; set; }
+        public uint Stride { get; set; }
+        public uint Offset { get; set; }
+    }
 
     public override void ReadBlobData(BinaryStream bs)
     {
         if (IsAtLeastVersion(1, 9))
         {
-            UnkV9_1 = bs.ReadInt16();
-            UnkV9_MaterialID = bs.ReadInt16();
-            UnkV9_3 = bs.ReadInt16();
-            UnkV9_4 = bs.ReadInt16();
+            MaterialIds = bs.ReadInt16s(4);
         }
-        else if (IsAtLeastVersion(1, 8))
+        else
         {
-            UnkV9_MaterialID = bs.ReadInt16();
+            MaterialId = bs.ReadInt16();
         }
 
-
-        Unk1 = bs.ReadInt16();
-        Unk2 = bs.ReadInt16();
+        RigidBoneIndex = bs.ReadInt16();
+        LODFlags = bs.ReadUInt16();
         LODLevel1 = bs.Read1Byte();
         LODLevel2 = bs.Read1Byte();
-        Unk3 = bs.ReadInt16();
-        Unk4 = bs.Read1Byte();
+
+        // Bucket Flags Reading
+        ushort bucketFlagsRaw = bs.ReadUInt16();
+        IsOpaque = (bucketFlagsRaw & 1) != 0;
+        IsDecal = (bucketFlagsRaw & 2) != 0;
+        IsTransparent = (bucketFlagsRaw & 4) != 0;
+        IsShadow = (bucketFlagsRaw & 8) != 0;
+        IsNotShadow = (bucketFlagsRaw & 16) != 0;
+        IsAlphaToCoverage = (bucketFlagsRaw & 32) != 0;
+
+        BucketOrder = bs.Read1Byte();
 
         if (IsAtLeastVersion(1, 2))
         {
-            UnkV2 = bs.Read1Byte();
-            UnkV2_2 = bs.Read1Byte();
+            SkinningElementsCount = bs.Read1Byte();
+            MorphWeightsCount = bs.Read1Byte();
         }
 
         if (IsAtLeastVersion(1, 3))
         {
-            UnkV3 = bs.Read1Byte();
+            IsMorphDamage = bs.ReadBoolean();
         }
 
-        Unk5 = bs.Read1Byte();
-        Unk6 = bs.ReadInt16();
-        Unk7 = bs.ReadInt32();
-        Unk8 = bs.ReadInt32();
+        Is32BitIndices = bs.ReadBoolean();
+        Topology = bs.ReadUInt16();
+        IndexBufferIndex = bs.ReadInt32();
+        IndexBufferOffset = bs.ReadInt32();
 
-        FaceStartIndex = bs.ReadUInt32();
-        UnkColor = bs.ReadUInt32();
-        FaceCount = bs.ReadUInt32();
-        VertexStartIndex = bs.ReadUInt32();
+        IndexBufferDrawOffset = bs.ReadInt32();
+        IndexedVertexOffset = bs.ReadInt32();
+        IndexCount = bs.ReadInt32();
+        PrimCount = bs.ReadInt32();
 
         if (IsAtLeastVersion(1, 6))
         {
-            UnkV6 = bs.ReadSingle();
-            NumVerts = bs.ReadUInt32();
+            ACMR = bs.ReadSingle();
+            ReferencedVertexCount = bs.ReadUInt32();
         }
 
-        Unk9 = bs.ReadUInt32();
+        VertexLayoutIndex = bs.ReadInt32();
 
-        int unkCount = bs.ReadInt32();
-
-
-        for (int i = 0; i < unkCount; i++)
+        int vbCount = bs.ReadInt32();
+        for (int i = 0; i < vbCount; i++)
         {
-            uint a = bs.ReadUInt32();
-            uint b = bs.ReadUInt32();
-            uint c = bs.ReadUInt32();
-            uint d = bs.ReadUInt32();
-            UnkEntries.Add(new UnkEntry(a, b, c, d));
+            VertexBuffers.Add(new VertexBufferUsage
+            {
+                Index = bs.ReadInt32(),
+                InputSlot = bs.ReadUInt32(),
+                Stride = bs.ReadUInt32(),
+                Offset = bs.ReadUInt32()
+            });
         }
 
         if (IsAtLeastVersion(1, 4))
         {
-            VertexLayoutIndex = bs.ReadInt32();
-            UnkV4 = bs.ReadInt32();
+            MorphDataBufferIndex = bs.ReadInt32();
+            SkinningDataBufferIndex = bs.ReadInt32();
         }
 
-        int unkCount2 = bs.ReadInt32();
-        UnkArr = bs.ReadInt32s(unkCount2);
+        int cbCount = bs.ReadInt32();
+        if (cbCount > 0)
+            ConstantBufferIndices = bs.ReadInt32s(cbCount);
+        else
+            ConstantBufferIndices = Array.Empty<int>();
 
         if (IsAtLeastVersion(1, 1))
         {
-            UnkV1 = bs.ReadUInt32();
+            SourceMeshIndex = bs.ReadUInt32();
         }
 
-        Vecs = MemoryMarshal.Cast<byte, Vector4>(bs.ReadBytes(0x10 * 5)).ToArray();
+        if (IsAtLeastVersion(1, 5))
+        {
+            TexCoordTransforms = MemoryMarshal.Cast<byte, Vector4>(bs.ReadBytes(0x10 * 5)).ToArray();
+        }
 
         if (IsAtLeastVersion(1, 8))
         {
-            VertexScale = MemoryMarshal.Read<Vector4>(bs.ReadBytes(0x10));
-            VertexPosition = MemoryMarshal.Read<Vector4>(bs.ReadBytes(0x10));
+            PositionScale = MemoryMarshal.Read<Vector4>(bs.ReadBytes(0x10));
+            PositionTranslate = MemoryMarshal.Read<Vector4>(bs.ReadBytes(0x10));
         }
     }
 
@@ -162,82 +182,91 @@ public class MeshBlob : BundleBlob
     {
         if (IsAtLeastVersion(1, 9))
         {
-            bs.WriteInt16(UnkV9_1);
-            bs.WriteInt16(UnkV9_MaterialID);
-            bs.WriteInt16(UnkV9_3);
-            bs.WriteInt16(UnkV9_4);
+            bs.WriteInt16s(MaterialIds);
         }
-
-        else if (IsAtLeastVersion(1, 8))
+        else
         {
-            bs.WriteInt16(UnkV9_MaterialID);
+            bs.WriteInt16(MaterialId);
         }
 
-        bs.WriteInt16(Unk1);
-        bs.WriteInt16(Unk2);
+        bs.WriteInt16(RigidBoneIndex);
+        bs.WriteUInt16(LODFlags);
         bs.WriteByte(LODLevel1);
         bs.WriteByte(LODLevel2);
-        bs.WriteInt16(Unk3);
-        bs.WriteByte(Unk4);
+
+        // Bucket Flags Writing
+        ushort bucketFlagsRaw = 0;
+        if (IsOpaque) bucketFlagsRaw |= 1;
+        if (IsDecal) bucketFlagsRaw |= 2;
+        if (IsTransparent) bucketFlagsRaw |= 4;
+        if (IsShadow) bucketFlagsRaw |= 8;
+        if (IsNotShadow) bucketFlagsRaw |= 16;
+        if (IsAlphaToCoverage) bucketFlagsRaw |= 32;
+        bs.WriteUInt16(bucketFlagsRaw);
+
+        bs.WriteByte(BucketOrder);
 
         if (IsAtLeastVersion(1, 2))
         {
-            bs.WriteByte(UnkV2);
-            bs.WriteByte(UnkV2_2);
+            bs.WriteByte(SkinningElementsCount);
+            bs.WriteByte(MorphWeightsCount);
         }
 
         if (IsAtLeastVersion(1, 3))
         {
-            bs.WriteByte(UnkV3);
+            bs.WriteBoolean(IsMorphDamage);
         }
 
-        bs.WriteByte(Unk5);
-        bs.WriteInt16(Unk6);
-        bs.WriteInt32(Unk7);
-        bs.WriteInt32(Unk8);
+        bs.WriteBoolean(Is32BitIndices);
+        bs.WriteUInt16(Topology);
+        bs.WriteInt32(IndexBufferIndex);
+        bs.WriteInt32(IndexBufferOffset);
 
-        bs.WriteUInt32(FaceStartIndex);
-        bs.WriteUInt32(UnkColor);
-        bs.WriteUInt32(FaceCount);
-        bs.WriteUInt32(VertexStartIndex);
+        bs.WriteInt32(IndexBufferDrawOffset);
+        bs.WriteInt32(IndexedVertexOffset);
+        bs.WriteInt32(IndexCount);
+        bs.WriteInt32(PrimCount);
 
         if (IsAtLeastVersion(1, 6))
         {
-            bs.WriteSingle(UnkV6);
-            bs.WriteUInt32(NumVerts);
+            bs.WriteSingle(ACMR);
+            bs.WriteUInt32(ReferencedVertexCount);
         }
 
-        bs.WriteUInt32(Unk9);
+        bs.WriteInt32(VertexLayoutIndex);
 
-        bs.WriteUInt32((uint)UnkEntries.Count);
-        for (int i = 0; i < UnkEntries.Count; i++)
+        bs.WriteInt32(VertexBuffers.Count);
+        foreach (var vb in VertexBuffers)
         {
-            bs.WriteUInt32(UnkEntries[i].a);
-            bs.WriteUInt32(UnkEntries[i].b);
-            bs.WriteUInt32(UnkEntries[i].c);
-            bs.WriteUInt32(UnkEntries[i].d);
+            bs.WriteInt32(vb.Index);
+            bs.WriteUInt32(vb.InputSlot);
+            bs.WriteUInt32(vb.Stride);
+            bs.WriteUInt32(vb.Offset);
         }
 
         if (IsAtLeastVersion(1, 4))
         {
-            bs.WriteInt32(VertexLayoutIndex);
-            bs.WriteInt32(UnkV4);
+            bs.WriteInt32(MorphDataBufferIndex);
+            bs.WriteInt32(SkinningDataBufferIndex);
         }
 
-        bs.WriteInt32(UnkArr.Length);
-        bs.WriteInt32s(UnkArr);
+        bs.WriteInt32(ConstantBufferIndices.Length);
+        bs.WriteInt32s(ConstantBufferIndices);
 
         if (IsAtLeastVersion(1, 1))
         {
-            bs.WriteUInt32(UnkV1);
+            bs.WriteUInt32(SourceMeshIndex);
         }
 
-        bs.Write(MemoryMarshal.Cast<Vector4, byte>(Vecs));
+        if (IsAtLeastVersion(1, 5))
+        {
+            bs.Write(MemoryMarshal.Cast<Vector4, byte>(TexCoordTransforms));
+        }
 
         if (IsAtLeastVersion(1, 8))
         {
-            bs.WriteVector4(VertexScale);
-            bs.WriteVector4(VertexPosition);
+            bs.WriteVector4(PositionScale);
+            bs.WriteVector4(PositionTranslate);
         }
     }
 }

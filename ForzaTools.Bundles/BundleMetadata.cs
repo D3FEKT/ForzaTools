@@ -1,10 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection.Metadata;
-using System.Text;
-using System.Threading.Tasks;
-
 using Syroot.BinaryData;
 
 namespace ForzaTools.Bundles;
@@ -19,15 +13,19 @@ public abstract class BundleMetadata
     public const uint TAG_METADATA_Identifier = 0x49642020; // "Id  "
     public const uint TAG_METADATA_BBox = 0x42426F78; // "BBox"
     public const uint TAG_METADATA_TRef = 0x54526566; // "TRef"
+    public const uint TAG_METADATA_ACMR = 0x41434D52; // "ACMR"
 
     // Materials (materialbin)
     public const uint TAG_METADATA_Atlas = 0x41545354; // "ATST"
-    public const uint TAG_METADATA_BLEN = 0x424C454E;   // "BLEN"
-    public const uint TAG_METADATA_VDCL = 0x5644434C;  // "VDCL"       
+    public const uint TAG_METADATA_BLEN = 0x424C454E; // "BLEN"
+    public const uint TAG_METADATA_VDCL = 0x5644434C; // "VDCL"
 
     public uint Tag { get; set; }
     public byte Version { get; set; }
     public ushort Size { get; set; }
+
+    // Added: Location in the original file
+    public long FileOffset { get; set; }
 
     private byte[] _data { get; set; }
 
@@ -42,17 +40,15 @@ public abstract class BundleMetadata
 
         ushort offset = bs.ReadUInt16();
 
+        // Read generic data for backup/passthrough
         bs.Position = basePos + offset;
+        this.FileOffset = bs.Position; // Store offset
+
         _data = bs.ReadBytes(Size);
 
+        // Read specific structure
         bs.Position = basePos + offset;
         ReadMetadataData(bs);
-    }
-
-    public virtual void SerializeHeader(BinaryStream bs)
-    {
-        bs.WriteUInt32(Tag);
-        bs.WriteUInt32(0); // TODO
     }
 
     public abstract void ReadMetadataData(BinaryStream bs);

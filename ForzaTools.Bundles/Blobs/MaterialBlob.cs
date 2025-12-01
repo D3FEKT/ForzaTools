@@ -1,13 +1,5 @@
 ﻿using Syroot.BinaryData;
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Numerics;
-using System.Runtime.InteropServices;
-
 namespace ForzaTools.Bundles.Blobs;
 
 public class MaterialBlob : BundleBlob
@@ -16,12 +8,19 @@ public class MaterialBlob : BundleBlob
 
     public override void ReadBlobData(BinaryStream bs)
     {
+        // MatI contains a full nested bundle.
+        // We pass the underlying stream to the new Bundle to load it.
+        // The BinaryStream 'bs' is already positioned at the start of the blob data.
+
         Bundle = new Bundle();
-        Bundle.Load(bs);
+        Bundle.Load(bs.BaseStream);
     }
 
     public override void SerializeBlobData(BinaryStream bs)
     {
-        Bundle.Serialize(bs);
+        if (Bundle != null)
+        {
+            Bundle.Serialize(bs.BaseStream);
+        }
     }
 }

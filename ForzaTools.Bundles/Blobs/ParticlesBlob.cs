@@ -2,17 +2,18 @@
 
 namespace ForzaTools.Bundles.Blobs;
 
-public class IndexBufferBlob : BundleBlob
+public class ParticleBlob : BundleBlob
 {
-    public BufferHeader Header { get; set; } = new();
+    public byte[] Data { get; set; }
 
     public override void ReadBlobData(BinaryStream bs)
     {
-        Header.Read(bs, VersionMajor, VersionMinor);
+        Data = GetContents(); // Uses the base class _data
     }
 
     public override void SerializeBlobData(BinaryStream bs)
     {
-        Header.Serialize(bs, VersionMajor, VersionMinor);
+        if (Data != null)
+            bs.WriteBytes(Data);
     }
 }

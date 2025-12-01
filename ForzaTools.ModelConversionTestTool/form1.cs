@@ -8,28 +8,38 @@ using System;
 using System.IO;
 using System.Windows.Forms;
 using System.Drawing;
+using System.Linq; // Added for ToList/RemoveRange logic
 
 public enum ModelGameVersion
 {
     FH4,
     FH5,
-    FM  // Forza Motorsport
+    FM
 }
 
 public class ModelConverterForm : Form
 {
+    // Controls
     private Button openButton;
     private Button saveButton;
+    private Button convertButton;
+
     private TextBox inputPathTextBox;
     private TextBox outputPathTextBox;
+
+    private Label inputLabel;
+    private Label outputLabel;
     private Label statusLabel;
-    private Bundle bundle;
+    private Label versionInfoLabel;
+
     private GroupBox conversionGroupBox;
     private RadioButton rbFH4ToFH5;
     private RadioButton rbFH5ToFH4;
     private RadioButton rbFMToFH5;
     private RadioButton rbOriginal;
-    private Label versionInfoLabel;
+
+    // Logic Data
+    private Bundle bundle;
 
     public ModelConverterForm()
     {
@@ -38,145 +48,144 @@ public class ModelConverterForm : Form
 
     private void InitializeComponent()
     {
-        Text = "Forza Model Conversion Tool";
-        Size = new Size(600, 350);  // Increased height for additional controls
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        StartPosition = FormStartPosition.CenterScreen;
+        // 1. Initialize all controls
+        this.inputLabel = new Label();
+        this.inputPathTextBox = new TextBox();
+        this.openButton = new Button();
 
-        // Create input file controls
-        Label inputLabel = new Label
-        {
-            Text = "Input .modelbin file:",
-            Location = new Point(20, 20),
-            AutoSize = true
-        };
+        this.outputLabel = new Label();
+        this.outputPathTextBox = new TextBox();
+        this.saveButton = new Button();
 
-        inputPathTextBox = new TextBox
-        {
-            Location = new Point(20, 45),
-            Width = 450,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
+        this.versionInfoLabel = new Label();
+        this.statusLabel = new Label();
 
-        openButton = new Button
-        {
-            Text = "Browse...",
-            Location = new Point(480, 43),
-            Width = 80,
-            Anchor = AnchorStyles.Top | AnchorStyles.Right
-        };
-        openButton.Click += OpenButton_Click;
+        this.conversionGroupBox = new GroupBox();
+        this.rbOriginal = new RadioButton();
+        this.rbFH4ToFH5 = new RadioButton();
+        this.rbFH5ToFH4 = new RadioButton();
+        this.rbFMToFH5 = new RadioButton();
 
-        // Version info label
-        versionInfoLabel = new Label
-        {
-            Text = "Version: N/A",
-            Location = new Point(20, 70),
-            AutoSize = true,
-            Font = new Font(Font, FontStyle.Bold)
-        };
+        this.convertButton = new Button();
 
-        // Create conversion options group
-        conversionGroupBox = new GroupBox
-        {
-            Text = "Conversion Options",
-            Location = new Point(20, 95),
-            Width = 540,
-            Height = 110,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
+        this.conversionGroupBox.SuspendLayout();
+        this.SuspendLayout();
 
-        rbOriginal = new RadioButton
-        {
-            Text = "Keep Original Format",
-            Location = new Point(15, 25),
-            AutoSize = true,
-            Checked = true
-        };
+        // 
+        // Form Settings
+        // 
+        this.ClientSize = new Size(500, 360);
+        this.Text = "Forza Model Conversion Tool";
+        this.FormBorderStyle = FormBorderStyle.FixedDialog;
+        this.MaximizeBox = false;
+        this.StartPosition = FormStartPosition.CenterScreen;
 
-        rbFH4ToFH5 = new RadioButton
-        {
-            Text = "FH4 to FH5 (Add 3rd tangent component)",
-            Location = new Point(15, 50),
-            AutoSize = true
-        };
+        // 
+        // Input Section (Top)
+        // 
+        this.inputLabel.Text = "Input Model File (.modelbin):";
+        this.inputLabel.Location = new Point(20, 20);
+        this.inputLabel.Size = new Size(200, 20);
 
-        rbFH5ToFH4 = new RadioButton
-        {
-            Text = "FH5 to FH4 (Remove 3rd tangent component)",
-            Location = new Point(15, 75),
-            AutoSize = true
-        };
+        this.inputPathTextBox.Location = new Point(20, 45);
+        this.inputPathTextBox.Size = new Size(360, 23);
+        this.inputPathTextBox.ReadOnly = true;
 
-        rbFMToFH5 = new RadioButton
-        {
-            Text = "FM to FH5 (Experimental)",
-            Location = new Point(250, 25),
-            AutoSize = true
-        };
+        this.openButton.Text = "Browse...";
+        this.openButton.Location = new Point(390, 44);
+        this.openButton.Size = new Size(90, 25);
+        this.openButton.Click += OpenButton_Click;
 
-        conversionGroupBox.Controls.AddRange(new Control[] { rbOriginal, rbFH4ToFH5, rbFH5ToFH4, rbFMToFH5 });
+        this.versionInfoLabel.Text = "Version: N/A";
+        this.versionInfoLabel.Location = new Point(390, 20);
+        this.versionInfoLabel.Size = new Size(90, 20);
+        this.versionInfoLabel.TextAlign = ContentAlignment.TopRight;
 
-        // Create output file controls
-        Label outputLabel = new Label
-        {
-            Text = "Output .modelbin file:",
-            Location = new Point(20, 215),
-            AutoSize = true
-        };
+        // 
+        // Output Section (Middle)
+        // 
+        this.outputLabel.Text = "Output File Path:";
+        this.outputLabel.Location = new Point(20, 85);
+        this.outputLabel.Size = new Size(200, 20);
 
-        outputPathTextBox = new TextBox
-        {
-            Location = new Point(20, 240),
-            Width = 450,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
+        this.outputPathTextBox.Location = new Point(20, 110);
+        this.outputPathTextBox.Size = new Size(360, 23);
 
-        saveButton = new Button
-        {
-            Text = "Browse...",
-            Location = new Point(480, 238),
-            Width = 80,
-            Anchor = AnchorStyles.Top | AnchorStyles.Right
-        };
-        saveButton.Click += SaveButton_Click;
+        this.saveButton.Text = "Save As...";
+        this.saveButton.Location = new Point(390, 109);
+        this.saveButton.Size = new Size(90, 25);
+        this.saveButton.Click += SaveButton_Click;
 
-        // Create convert button
-        Button convertButton = new Button
-        {
-            Text = "Convert",
-            Location = new Point(250, 275),
-            Width = 100,
-            Height = 30,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
-        convertButton.Click += ConvertButton_Click;
+        // 
+        // Conversion Options GroupBox
+        // 
+        this.conversionGroupBox.Text = "Conversion Options";
+        this.conversionGroupBox.Location = new Point(20, 150);
+        this.conversionGroupBox.Size = new Size(460, 130);
+        this.conversionGroupBox.Enabled = false; // Disabled until file loaded
 
-        // Status label
-        statusLabel = new Label
-        {
-            Text = "Ready",
-            Location = new Point(20, 315),
-            AutoSize = true,
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
-        };
+        // Radio Buttons inside GroupBox
+        this.rbOriginal.Text = "Keep Original Format";
+        this.rbOriginal.Location = new Point(20, 25);
+        this.rbOriginal.Size = new Size(400, 24);
+        this.rbOriginal.Checked = true;
 
-        // Add controls to form
-        Controls.Add(inputLabel);
-        Controls.Add(inputPathTextBox);
-        Controls.Add(openButton);
-        Controls.Add(versionInfoLabel);
-        Controls.Add(conversionGroupBox);
-        Controls.Add(outputLabel);
-        Controls.Add(outputPathTextBox);
-        Controls.Add(saveButton);
-        Controls.Add(convertButton);
-        Controls.Add(statusLabel);
+        this.rbFH4ToFH5.Text = "Convert FH4 to FH5";
+        this.rbFH4ToFH5.Location = new Point(20, 50);
+        this.rbFH4ToFH5.Size = new Size(400, 24);
 
-        // Initially disable conversion options until a file is loaded
-        conversionGroupBox.Enabled = false;
+        this.rbFH5ToFH4.Text = "Convert FH5 to FH4";
+        this.rbFH5ToFH4.Location = new Point(20, 75);
+        this.rbFH5ToFH4.Size = new Size(400, 24);
+
+        this.rbFMToFH5.Text = "Convert FM ( Motorsport) to FH5";
+        this.rbFMToFH5.Location = new Point(20, 100);
+        this.rbFMToFH5.Size = new Size(400, 24);
+        this.rbFMToFH5.Visible = false; // Hidden by default as per logic
+
+        this.conversionGroupBox.Controls.Add(this.rbOriginal);
+        this.conversionGroupBox.Controls.Add(this.rbFH4ToFH5);
+        this.conversionGroupBox.Controls.Add(this.rbFH5ToFH4);
+        this.conversionGroupBox.Controls.Add(this.rbFMToFH5);
+
+        // 
+        // Convert Button & Status (Bottom)
+        // 
+        this.convertButton.Text = "Convert Model";
+        this.convertButton.Location = new Point(340, 300);
+        this.convertButton.Size = new Size(140, 40);
+        this.convertButton.Font = new Font(this.Font, FontStyle.Bold);
+        this.convertButton.Click += ConvertButton_Click;
+
+        this.statusLabel.Text = "Ready";
+        this.statusLabel.Location = new Point(20, 310);
+        this.statusLabel.Size = new Size(300, 23);
+        this.statusLabel.ForeColor = Color.Gray;
+
+        // 
+        // Add Controls to Form
+        // 
+        this.Controls.Add(this.inputLabel);
+        this.Controls.Add(this.inputPathTextBox);
+        this.Controls.Add(this.openButton);
+        this.Controls.Add(this.versionInfoLabel);
+
+        this.Controls.Add(this.outputLabel);
+        this.Controls.Add(this.outputPathTextBox);
+        this.Controls.Add(this.saveButton);
+
+        this.Controls.Add(this.conversionGroupBox);
+        this.Controls.Add(this.convertButton);
+        this.Controls.Add(this.statusLabel);
+
+        this.conversionGroupBox.ResumeLayout(false);
+        this.ResumeLayout(false);
+        this.PerformLayout();
     }
+
+    // ---------------------------------------------------------
+    // EXISTING LOGIC BELOW (Unchanged)
+    // ---------------------------------------------------------
 
     private void OpenButton_Click(object sender, EventArgs e)
     {
@@ -210,12 +219,14 @@ public class ModelConverterForm : Form
                     DetectModelFormat();
 
                     statusLabel.Text = "File loaded successfully";
+                    statusLabel.ForeColor = Color.Green;
                     conversionGroupBox.Enabled = true;
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     statusLabel.Text = "Error loading file";
+                    statusLabel.ForeColor = Color.Red;
                     bundle = null;
                     versionInfoLabel.Text = "Version: N/A";
                     conversionGroupBox.Enabled = false;
@@ -226,7 +237,6 @@ public class ModelConverterForm : Form
 
     private void DetectModelFormat()
     {
-        // Detect the format based on version and structure
         bool hasTangent3 = false;
 
         try
@@ -235,12 +245,10 @@ public class ModelConverterForm : Form
             VertexLayoutBlob layout = (VertexLayoutBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexLayout, meshBlob.VertexLayoutIndex);
 
             // Check for tangent elements
-            int tangentCount = 0;
             for (int i = 0; i < layout.Elements.Count; i++)
             {
                 if (layout.SemanticNames[layout.Elements[i].SemanticNameIndex] == "TANGENT")
                 {
-                    tangentCount++;
                     if (layout.Elements[i].SemanticIndex == 2)
                     {
                         hasTangent3 = true;
@@ -251,16 +259,14 @@ public class ModelConverterForm : Form
             // Select appropriate radio button based on detection
             if (hasTangent3)
             {
-                // This is likely an FH5 model
-                rbOriginal.Text = "Keep Original Format (FH5)";
+                rbOriginal.Text = "Keep Original Format (FH5 detected)";
                 rbFH5ToFH4.Checked = false;
                 rbFH4ToFH5.Checked = false;
                 rbOriginal.Checked = true;
             }
             else
             {
-                // This is likely an FH4 model
-                rbOriginal.Text = "Keep Original Format (FH4)";
+                rbOriginal.Text = "Keep Original Format (FH4 detected)";
                 rbFH4ToFH5.Checked = true;
                 rbFH5ToFH4.Checked = false;
                 rbOriginal.Checked = false;
@@ -279,7 +285,6 @@ public class ModelConverterForm : Form
         }
         catch (Exception)
         {
-            // If any exceptions occur during detection, fall back to default
             rbOriginal.Text = "Keep Original Format";
             rbOriginal.Checked = true;
             rbFH4ToFH5.Checked = false;
@@ -324,12 +329,11 @@ public class ModelConverterForm : Form
         try
         {
             statusLabel.Text = "Converting...";
+            statusLabel.ForeColor = Color.Blue;
             Application.DoEvents();
 
-            // Create a clone of the bundle for conversion
             Bundle outputBundle = CloneBundle(bundle);
 
-            // Apply selected conversion
             if (rbFH4ToFH5.Checked)
             {
                 MakeFH5Compatible(outputBundle);
@@ -342,27 +346,26 @@ public class ModelConverterForm : Form
             {
                 MakeFMToFH5Compatible(outputBundle);
             }
-            // Original format - no changes needed
 
-            // Save the converted file
             using (var output = new FileStream(outputPathTextBox.Text, FileMode.Create))
             {
                 outputBundle.Serialize(output);
             }
 
             statusLabel.Text = "Conversion completed successfully";
+            statusLabel.ForeColor = Color.Green;
             MessageBox.Show("Conversion completed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
             statusLabel.Text = "Error during conversion";
+            statusLabel.ForeColor = Color.Red;
             MessageBox.Show($"Error during conversion: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
     private Bundle CloneBundle(Bundle sourceBundle)
     {
-        // Create a memory stream to serialize and deserialize the bundle
         using (MemoryStream ms = new MemoryStream())
         {
             sourceBundle.Serialize(ms);
@@ -375,7 +378,7 @@ public class ModelConverterForm : Form
 
     private void MakeFH5Compatible(Bundle bundle)
     {
-        // Use the existing method from Program class
+        // Assuming Program class exists as per your original code
         Program.MakeFH5Compatible(bundle);
     }
 
@@ -383,13 +386,9 @@ public class ModelConverterForm : Form
     {
         try
         {
-            // Get the main lod mesh
             MeshBlob meshBlob = (MeshBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_Mesh, 0);
-
-            // Find the vertex layout
             VertexLayoutBlob layout = (VertexLayoutBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexLayout, meshBlob.VertexLayoutIndex);
 
-            // Find 3rd tangent component if it exists
             int tangentThirdIndex = -1;
             for (int i = 0; i < layout.Elements.Count; i++)
             {
@@ -403,25 +402,20 @@ public class ModelConverterForm : Form
 
             if (tangentThirdIndex >= 0)
             {
-                // Remove the 3rd tangent component
                 layout.Elements.RemoveAt(tangentThirdIndex);
                 layout.PackedFormats.RemoveAt(tangentThirdIndex);
 
-                // Remove the tangent data from vertex buffer
                 VertexBufferBlob buffer = (VertexBufferBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexBuffer, 1);
-                int offset = tangentThirdIndex * 4; // Assuming 4 bytes per element
+                int offset = tangentThirdIndex * 4;
 
                 for (int i = 0; i < buffer.Header.Data.Length; i++)
                 {
                     var l = buffer.Header.Data[i].ToList();
-                    l.RemoveRange(offset, 4); // Remove 4 bytes for the tangent
+                    l.RemoveRange(offset, 4);
                     buffer.Header.Data[i] = l.ToArray();
                 }
 
-                // Clear the flag that FH5 requires
                 layout.Flags &= 0xFFFFFF7F;
-
-                // Update sizes
                 byte totalSize = layout.GetTotalVertexSize();
                 buffer.Header.BufferWidth = totalSize;
                 buffer.Header.NumElements = (byte)layout.Elements.Count;
@@ -437,14 +431,8 @@ public class ModelConverterForm : Form
     {
         try
         {
-            // First apply FH5 compatibility changes
             MakeFH5Compatible(bundle);
-
-            // Additional FM-specific conversions could be added here
-            // For example, adjust specific flags or formats that might be different in FM
-
-            // For now, just update version to indicate it's for FH5
-            bundle.VersionMajor = 2;  // Typical for FH5
+            bundle.VersionMajor = 2;
             bundle.VersionMinor = 0;
         }
         catch (Exception ex)
