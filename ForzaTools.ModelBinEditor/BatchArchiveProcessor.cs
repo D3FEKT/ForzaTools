@@ -46,7 +46,11 @@ namespace ForzaTools.ModelBinEditor
                 Directory.CreateDirectory(tempPath);
 
                 log?.Invoke("  Extracting...", "NORMAL");
-                ZipFile.ExtractToDirectory(zipPath, tempPath);
+                using (var zip = new CustomZipFile(zipPath))
+                {
+                    zip.ExtractToDirectory(tempPath);
+                }
+                // ----------------------------------
 
                 var modelFiles = Directory.GetFiles(tempPath, "*.modelbin", SearchOption.AllDirectories);
                 log?.Invoke($"  Found {modelFiles.Length} modelbin files.", "INFO");

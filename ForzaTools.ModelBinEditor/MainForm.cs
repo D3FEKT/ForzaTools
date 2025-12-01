@@ -242,10 +242,11 @@ namespace ForzaTools.ModelBinEditor
 
         private void SaveFile_Click(object sender, EventArgs e)
         {
-            if (currentBundle == null) return;
+            if (currentBundle == null && currentCarbin == null) return; // Check for both
+
             using (SaveFileDialog sfd = new SaveFileDialog())
             {
-                sfd.Filter = "ModelBin|*.modelbin|All|*.*";
+                sfd.Filter = "ModelBin|*.modelbin|CarScene|*.carbin|All|*.*";
                 if (!string.IsNullOrEmpty(currentFilePath)) sfd.FileName = Path.GetFileName(currentFilePath);
                 else sfd.FileName = "file.modelbin";
 
@@ -254,7 +255,13 @@ namespace ForzaTools.ModelBinEditor
                     try
                     {
                         using (var fs = new FileStream(sfd.FileName, FileMode.Create))
-                            currentBundle.Serialize(fs);
+                        {
+                            if (currentCarbin != null)
+                                currentCarbin.Save(fs);
+                            else if (currentBundle != null)
+                                currentBundle.Serialize(fs);
+                        }
+
                         MessageBox.Show("Saved successfully.");
                         LogToConsole($"Saved to {sfd.FileName}", Color.LimeGreen);
                     }
@@ -560,45 +567,79 @@ namespace ForzaTools.ModelBinEditor
 
         private void ConvertButton_Click(object sender, EventArgs e)
         {
-            if (currentBundle == null) return;
-
-            var selectedProfile = targetVersionComboBox.SelectedItem as GameProfile;
-            if (selectedProfile == null || !selectedProfile.Name.Contains("Horizon 5"))
+            // Safety Check: Ensure at least one file type is loaded
+            if (currentBundle == null && currentCarbin == null)
             {
-                if (MessageBox.Show("The conversion logic is specifically designed for Forza Horizon 5.\nContinue anyway?", "Version Mismatch", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-                    return;
+                MessageBox.Show("No file loaded to convert.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
 
-            try
+            // --- CARBIN CONVERSION LOGIC ---
+            if (currentCarbin != null)
             {
-                // Using shared logic in ModelConverter
-                bool modified = ModelConverter.MakeFH5Compatible(currentBundle);
-
-                if (modified)
+                try
                 {
-                    using (MemoryStream ms = new MemoryStream())
+                    LogToConsole("Starting .carbin conversion...", Color.White);
+
+                    // Perform conversion (in-memory)
+                    currentCarbin.ConvertToFH5();
+
+                    // Refresh UI to show new values/structure
+                    PopulateCarbinTree();
+
+                    this.Text = $"Forza ModelBin Editor - {Path.GetFileName(currentFilePath)} (Converted to FH5)";
+                    LogToConsole("Carbin file converted to Forza Horizon 5 format.", Color.Cyan);
+                    MessageBox.Show("Carbin conversion complete.\nPlease use 'Save As' to write the file to disk.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    LogToConsole($"Carbin conversion failed: {ex.Message}", Color.Red);
+                    MessageBox.Show($"Carbin conversion failed:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return; // Exit after handling carbin
+            }
+
+            // --- MODELBIN BUNDLE LOGIC (Existing) ---
+            if (currentBundle != null)
+            {
+                var selectedProfile = targetVersionComboBox.SelectedItem as GameProfile;
+                if (selectedProfile == null || !selectedProfile.Name.Contains("Horizon 5"))
+                {
+                    if (MessageBox.Show("The conversion logic is specifically designed for Forza Horizon 5.\nContinue anyway?", "Version Mismatch", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                        return;
+                }
+
+                try
+                {
+                    bool modified = ModelConverter.MakeFH5Compatible(currentBundle);
+
+                    if (modified)
                     {
-                        currentBundle.Serialize(ms);
-                        ms.Position = 0;
+                        // Serialize to memory to refresh internal offsets/structure
+                        using (MemoryStream ms = new MemoryStream())
+                        {
+                            currentBundle.Serialize(ms);
+                            ms.Position = 0;
 
-                        var newBundle = new Bundle();
-                        newBundle.Load(ms);
-                        currentBundle = newBundle;
-                        PopulateTree();
+                            var newBundle = new Bundle();
+                            newBundle.Load(ms);
+                            currentBundle = newBundle;
+                            PopulateTree();
+                        }
+                        MessageBox.Show("Conversion to FH5 format completed successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        LogToConsole("ModelBin converted to FH5 format.", Color.Cyan);
                     }
-                    MessageBox.Show("Conversion to FH5 format completed successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    LogToConsole("Model converted to FH5 format.", Color.Cyan);
+                    else
+                    {
+                        MessageBox.Show("Model appears to already be compatible with FH5.", "No Changes Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        LogToConsole("ModelBin conversion skipped (Already FH5 compatible).", Color.Yellow);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    MessageBox.Show("Model appears to already be compatible with FH5.", "No Changes Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    LogToConsole("Conversion skipped (Already FH5 compatible).", Color.Yellow);
+                    MessageBox.Show($"Conversion failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    LogToConsole($"ModelBin conversion failed: {ex.Message}", Color.Red);
                 }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Conversion failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                LogToConsole($"Conversion failed: {ex.Message}", Color.Red);
             }
         }
 
