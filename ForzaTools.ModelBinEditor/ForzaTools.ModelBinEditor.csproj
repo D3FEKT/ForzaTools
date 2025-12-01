@@ -14,8 +14,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="DurangoTypes">
+      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\DurangoTypes.dll</HintPath>
+    </Reference>
     <Reference Include="ForzaTools.Bundles">
       <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\ForzaTools.Bundles.dll</HintPath>
+    </Reference>
+    <Reference Include="ForzaTools.Shared">
+      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\ForzaTools.Shared.dll</HintPath>
+    </Reference>
+    <Reference Include="ForzaTools.Utils">
+      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\ForzaTools.Utils.dll</HintPath>
     </Reference>
   </ItemGroup>
 

@@ -191,6 +191,20 @@ public class Bundle
         bs.Position = baseBundleOffset + totalSize;
     }
 
+    public BundleBlob GetBlobByIndex(uint tag, int index)
+    {
+        int current = 0;
+        foreach (var blob in Blobs)
+        {
+            if (blob.Tag == tag)
+            {
+                if (current == index) return blob;
+                current++;
+            }
+        }
+        return null;
+    }
+
     private BundleBlob GetBlobByTag(uint tag)
     {
         return tag switch

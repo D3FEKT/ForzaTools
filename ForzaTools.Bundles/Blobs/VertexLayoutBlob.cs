@@ -10,10 +10,11 @@ public class VertexLayoutBlob : BundleBlob
     public List<string> SemanticNames { get; set; } = new();
     public List<D3D12_INPUT_LAYOUT_DESC> Elements { get; set; } = new();
     public List<DXGI_FORMAT> PackedFormats { get; set; } = new();
-    public uint Flags { get; set; } // v1.1
+    public uint Flags { get; set; }
 
     public override void ReadBlobData(BinaryStream bs)
     {
+        // ... [Keep existing ReadBlobData] ...
         ushort semanticCount = bs.ReadUInt16();
         for (int i = 0; i < semanticCount; i++)
         {
@@ -41,6 +42,7 @@ public class VertexLayoutBlob : BundleBlob
 
     public override void SerializeBlobData(BinaryStream bs)
     {
+        // ... [Keep existing SerializeBlobData] ...
         bs.WriteUInt16((ushort)SemanticNames.Count);
         foreach (string semanticName in SemanticNames)
         {
@@ -63,7 +65,34 @@ public class VertexLayoutBlob : BundleBlob
             bs.WriteUInt32(Flags);
     }
 
-    // Helper methods (GetElement, GetTotalVertexSize) should be retained here...
+    // --- NEW METHOD ADDED HERE ---
+    public int GetDataOffsetOfElement(string semanticName, int semanticIndex)
+    {
+        int offset = 0;
+        for (int i = 0; i < Elements.Count; i++)
+        {
+            var element = Elements[i];
+
+            // SemanticNameIndex points to the string in the SemanticNames list
+            string name = SemanticNames[element.SemanticNameIndex];
+
+            if (name == semanticName && element.SemanticIndex == semanticIndex)
+                return offset;
+
+            DXGI_FORMAT format = PackedFormats[i];
+            offset += GetSizeOfElementFormat(format);
+
+            // Replicate alignment logic (padding)
+            if (i + 1 < Elements.Count && offset % 4 != 0)
+            {
+                if (GetSizeOfElementFormat(PackedFormats[i + 1]) >= 4)
+                    offset += (offset % 4);
+            }
+        }
+        return -1;
+    }
+    // -----------------------------
+
     public byte GetTotalVertexSize()
     {
         byte size = 0;
@@ -81,7 +110,6 @@ public class VertexLayoutBlob : BundleBlob
 
     private static byte GetSizeOfElementFormat(DXGI_FORMAT format)
     {
-        // Add more formats as needed based on DXGI_Utils or Template
         return format switch
         {
             DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT => 16,
@@ -99,11 +127,12 @@ public class VertexLayoutBlob : BundleBlob
             DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS => 4,
             DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS => 2,
             DXGI_FORMAT.DXGI_FORMAT_X32_TYPELESS_G8X24_UINT => 8,
-            _ => 4, // Safe default or throw
+            _ => 4,
         };
     }
 }
 
+// ... [Keep D3D12_INPUT_LAYOUT_DESC class] ...
 public class D3D12_INPUT_LAYOUT_DESC
 {
     public short SemanticNameIndex;

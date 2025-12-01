@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Linq;
 using ForzaTools.Bundles;
 using ForzaTools.Bundles.Blobs;
+using ForzaTools.Shared;
 using Syroot.BinaryData;
 
 namespace ForzaTools.ModelBinEditor
@@ -40,6 +41,7 @@ namespace ForzaTools.ModelBinEditor
             InitializeComponent();
             InitializePropertyGridContextMenu();
             InitializeTargetVersionDropdown();
+            InitializeEnhancedUI();
         }
 
         private void InitializeTargetVersionDropdown()
@@ -89,28 +91,172 @@ namespace ForzaTools.ModelBinEditor
 
             propertyGrid.PropertySort = PropertySort.NoSort;
         }
+        private bool MakeFH5Compatible(Bundle bundle)
+        {
+            // FIX 1: Call GetBlobByIndex on the 'bundle' instance
+            MeshBlob meshBlob = (MeshBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_Mesh, 0);
+            if (meshBlob == null) throw new Exception("No mesh blob found in the model.");
 
-        // --- CONVERSION LOGIC (DISABLED FOR NOW) ---
+            // FIX 2: Call GetBlobByIndex on the 'bundle' instance
+            VertexLayoutBlob layout = (VertexLayoutBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexLayout, meshBlob.VertexLayoutIndex);
+            if (layout == null) throw new Exception("No vertex layout blob found in the model.");
+
+            // Check if the model already has a third tangent component
+            bool hasThirdTangentComponent = false;
+            foreach (var element in layout.Elements)
+            {
+                if (layout.SemanticNames[element.SemanticNameIndex] == "TANGENT" && element.SemanticIndex == 2)
+                {
+                    hasThirdTangentComponent = true;
+                    break;
+                }
+            }
+
+            // If it exists, we don't need to do anything
+            if (hasThirdTangentComponent) return false;
+
+            // Find where to insert the new component (after existing TANGENTs)
+            int tangentIndex = layout.Elements.FindIndex(e => layout.SemanticNames[e.SemanticNameIndex] == "TANGENT");
+            if (tangentIndex < 0) throw new Exception("No tangent semantic found in vertex layout.");
+
+            // Create new Input Layout Element
+            D3D12_INPUT_LAYOUT_DESC thirdTangentComponent = new D3D12_INPUT_LAYOUT_DESC()
+            {
+                SemanticNameIndex = (short)layout.SemanticNames.IndexOf("TANGENT"),
+                Format = DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM, // FH5 specific format
+                InputSlot = 1,
+                SemanticIndex = 2,
+                AlignedByteOffset = -1,
+                InstanceDataStepRate = 0,
+            };
+
+            // Insert into Layout
+            layout.Elements.Insert(tangentIndex + 2, thirdTangentComponent);
+            layout.PackedFormats.Insert(tangentIndex + 2, DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS);
+            layout.Flags |= 0x80; // Required flag for FH5
+
+            // FIX 3: Call GetDataOffsetOfElement on the 'layout' instance
+            // (Ensure you made this method PUBLIC in VertexLayoutBlob.cs)
+            int offset = layout.GetDataOffsetOfElement("TANGENT", 2);
+
+            // FIX 4: Call GetBlobByIndex on the 'bundle' instance
+            VertexBufferBlob buffer = (VertexBufferBlob)bundle.GetBlobByIndex(Bundle.TAG_BLOB_VertexBuffer, 1);
+            if (buffer == null) throw new Exception("No vertex buffer blob found in the model.");
+
+            // Insert placeholder data (0xFF) into the vertex buffer streams
+            for (int i = 0; i < buffer.Header.Data.Length; i++)
+            {
+                var l = buffer.Header.Data[i].ToList();
+                l.Insert(offset, 0xFF);
+                l.Insert(offset + 1, 0xFF);
+                l.Insert(offset + 2, 0xFF);
+                l.Insert(offset + 3, 0xFF);
+
+                buffer.Header.Data[i] = l.ToArray();
+            }
+
+            // Update Header info
+            byte totalSize = layout.GetTotalVertexSize();
+
+            // Use Stride (from previous fix)
+            buffer.Header.Stride = totalSize;
+
+            buffer.Header.NumElements = (byte)layout.Elements.Count;
+
+            return true;
+        }
+
+        // Helper to calculate the byte offset of a specific element in the vertex layout
+        private int GetDataOffsetOfElement(VertexLayoutBlob layout, string semanticName, int semanticIndex)
+        {
+            int offset = 0;
+            for (int i = 0; i < layout.Elements.Count; i++)
+            {
+                var element = layout.Elements[i];
+                string name = layout.SemanticNames[element.SemanticNameIndex];
+
+                if (name == semanticName && element.SemanticIndex == semanticIndex)
+                    return offset;
+
+                DXGI_FORMAT format = layout.PackedFormats[i];
+                offset += GetSizeOfElementFormat(format);
+
+                // Replicate alignment logic from VertexLayoutBlob
+                if (i + 1 < layout.Elements.Count && offset % 4 != 0)
+                {
+                    if (GetSizeOfElementFormat(layout.PackedFormats[i + 1]) >= 4)
+                        offset += (offset % 4);
+                }
+            }
+            return -1;
+        }
+
+        // Helper to get size of DXGI Formats (Local copy as the original might be inaccessible)
+        private static byte GetSizeOfElementFormat(DXGI_FORMAT format)
+        {
+            return format switch
+            {
+                DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT => 16,
+                DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT => 12,
+                DXGI_FORMAT.DXGI_FORMAT_R32G32_FLOAT => 8,
+                DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R16G16_UNORM => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R16G16_SNORM => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R16G16_FLOAT => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R8G8_UNORM => 2,
+                DXGI_FORMAT.DXGI_FORMAT_R8G8_SINT => 2,
+                DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R11G11B10_FLOAT => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS => 2,
+                DXGI_FORMAT.DXGI_FORMAT_X32_TYPELESS_G8X24_UINT => 8,
+                _ => 4,
+            };
+        }
+
         private void ConvertButton_Click(object sender, EventArgs e)
         {
-            MessageBox.Show("Conversion functionality is currently disabled.", "Feature Disabled", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            /*
             if (currentBundle == null) return;
-            if (!(targetVersionComboBox.SelectedItem is GameProfile targetProfile)) return;
+
+            // Check if FH5 is selected (or just run it as the primary conversion logic)
+            var selectedProfile = targetVersionComboBox.SelectedItem as GameProfile;
+            if (selectedProfile == null || !selectedProfile.Name.Contains("Horizon 5"))
+            {
+                if (MessageBox.Show("The conversion logic is specifically designed for Forza Horizon 5.\nContinue anyway?", "Version Mismatch", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+            }
 
             try
             {
-                // ... (Previous logic kept commented out for future reference)
-                // 1. Update Version Numbers
-                // 2. Serialize to Memory
-                // 3. Reload from Memory
-                // 4. Update UI
+                // Perform the FH5 compatibility conversion
+                bool modified = MakeFH5Compatible(currentBundle);
+
+                if (modified)
+                {
+                    // Serialize to memory to refresh the bundle state
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        currentBundle.Serialize(ms);
+                        ms.Position = 0;
+
+                        // Reload the bundle to reflect changes in UI
+                        var newBundle = new Bundle();
+                        newBundle.Load(ms);
+                        currentBundle = newBundle;
+                        PopulateTree();
+                    }
+                    MessageBox.Show("Conversion to FH5 format completed successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Model appears to already be compatible with FH5 (Tangent 3 found).", "No Changes Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Conversion failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            */
         }
 
         private void Exit_Click(object sender, EventArgs e) => Close();
@@ -149,6 +295,7 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
+
         private void PopulateTree()
         {
             treeView.BeginUpdate();
@@ -159,21 +306,32 @@ namespace ForzaTools.ModelBinEditor
 
                 if (currentBundle == null) return;
 
-                TreeNode root = new TreeNode("Bundle");
+                TreeNode root = new TreeNode($"Bundle ({currentBundle.Blobs.Count} items)");
                 root.Tag = currentBundle;
                 treeView.Nodes.Add(root);
 
-                if (currentBundle.Blobs.Count == 0)
-                {
-                    root.Nodes.Add(new TreeNode("No Blobs found (Check file version)"));
-                }
+                // Get filter text
+                string filter = searchTextBox.Text.ToLower();
+                bool useGroups = groupByTagButton.Checked;
+
+                // Dictionary to hold group nodes if grouping is enabled
+                Dictionary<string, TreeNode> groups = new Dictionary<string, TreeNode>();
 
                 for (int i = 0; i < currentBundle.Blobs.Count; i++)
                 {
                     var blob = currentBundle.Blobs[i];
-                    TreeNode blobNode = new TreeNode(GetBlobName(blob, i));
+
+                    // Generate a descriptive name
+                    string blobName = GetBlobName(blob, i);
+
+                    // SEARCH FILTER: Skip if name doesn't match
+                    if (!string.IsNullOrEmpty(filter) && !blobName.ToLower().Contains(filter))
+                        continue;
+
+                    TreeNode blobNode = new TreeNode(blobName);
                     blobNode.Tag = blob;
 
+                    // --- Add Metadata Nodes (Keep existing logic) ---
                     TreeNode metaRoot = new TreeNode("Metadata");
                     foreach (var meta in blob.Metadatas)
                     {
@@ -182,15 +340,95 @@ namespace ForzaTools.ModelBinEditor
                         metaRoot.Nodes.Add(metaNode);
                     }
                     if (metaRoot.Nodes.Count > 0) blobNode.Nodes.Add(metaRoot);
+                    // -----------------------------------------------
+
+                    // GROUPING LOGIC
+                    if (useGroups)
+                    {
+                        // Extract tag name (e.g., "Mesh", "Material")
+                        string typeName = blob.GetType().Name.Replace("Blob", "");
+
+                        if (!groups.ContainsKey(typeName))
+                        {
+                            TreeNode groupNode = new TreeNode(typeName);
+                            groups[typeName] = groupNode;
+                            root.Nodes.Add(groupNode);
+                        }
+                        groups[typeName].Nodes.Add(blobNode);
+                    }
+                    else
+                    {
+                        root.Nodes.Add(blobNode);
+                    }
 
                     if (blob is MaterialBlob matBlob && matBlob.Bundle != null)
                     {
-                        blobNode.Nodes.Add(new TreeNode("Nested Bundle") { Tag = matBlob.Bundle });
+                        // Create a folder for the nested bundle
+                        TreeNode subBundleNode = new TreeNode($"Nested Bundle ({matBlob.Bundle.Blobs.Count} items)");
+
+                        for (int j = 0; j < matBlob.Bundle.Blobs.Count; j++)
+                        {
+                            var subBlob = matBlob.Bundle.Blobs[j];
+
+                            // Create node for the sub-blob using the same naming helper
+                            TreeNode subBlobNode = new TreeNode(GetBlobName(subBlob, j));
+                            subBlobNode.Tag = subBlob; // Allow PropertyGrid inspection
+
+                            // Add Metadata for the sub-blob
+                            TreeNode subMetaRoot = new TreeNode("Metadata");
+                            foreach (var subMeta in subBlob.Metadatas)
+                            {
+                                TreeNode subMetaNode = new TreeNode(GetMetadataName(subMeta));
+                                subMetaNode.Tag = subMeta;
+                                subMetaRoot.Nodes.Add(subMetaNode);
+                            }
+
+                            // Only add metadata folder if it has items
+                            if (subMetaRoot.Nodes.Count > 0)
+                            {
+                                subBlobNode.Nodes.Add(subMetaRoot);
+                            }
+
+                            // Add the sub-blob to the nested bundle folder
+                            subBundleNode.Nodes.Add(subBlobNode);
+                        }
+
+                        // Add the nested bundle folder to the main Material node
+                        blobNode.Nodes.Add(subBundleNode);
                     }
 
-                    root.Nodes.Add(blobNode);
+                    if (blob is SkeletonBlob skel)
+                    {
+                        TreeNode bonesRoot = new TreeNode($"BonesList ({skel.Bones.Count} items)");
+
+                        for (int b = 0; b < skel.Bones.Count; b++)
+                        {
+                            var bone = skel.Bones[b];
+
+                            // Format: [Index] BoneName (Parent: ParentIndex)
+                            StringBuilder boneLabel = new StringBuilder();
+                            boneLabel.Append($"[{b}] {bone.Name}");
+
+                            if (bone.ParentId > -1)
+                                boneLabel.Append($" (Parent: {bone.ParentId})");
+
+                            TreeNode boneNode = new TreeNode(boneLabel.ToString());
+                            boneNode.Tag = bone; // Links to PropertyGrid
+
+                            bonesRoot.Nodes.Add(boneNode);
+                        }
+
+                        // Only add the folder if there are actual bones
+                        if (bonesRoot.Nodes.Count > 0)
+                        {
+                            blobNode.Nodes.Add(bonesRoot);
+                        }
+                    }
                 }
+
                 root.Expand();
+                // If searching, expand all matches
+                if (!string.IsNullOrEmpty(filter)) root.ExpandAll();
             }
             finally
             {
@@ -200,31 +438,94 @@ namespace ForzaTools.ModelBinEditor
 
         private string GetBlobName(BundleBlob blob, int index)
         {
-            try
-            {
-                var nameMeta = blob.GetMetadataByTag<ForzaTools.Bundles.Metadata.NameMetadata>(BundleMetadata.TAG_METADATA_Name);
-                string name = nameMeta?.Name ?? blob.GetType().Name.Replace("Blob", "");
+            // Try to get Name Metadata first
+            var nameMeta = blob.GetMetadataByTag<ForzaTools.Bundles.Metadata.NameMetadata>(BundleMetadata.TAG_METADATA_Name);
+            string metaName = nameMeta?.Name;
 
-                // Simplified name, removed detection info
-                return $"[{index}] {name}";
+            // Base type name
+            string typeName = blob.GetType().Name.Replace("Blob", "");
+
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"[{index}] {typeName}");
+
+            if (!string.IsNullOrEmpty(metaName))
+            {
+                sb.Append($" : {metaName}");
             }
-            catch { return $"[{index}] Blob"; }
+
+            // Add specific details based on Blob Type
+            if (blob is MeshBlob mesh)
+            {
+                sb.Append($" (LODs: {mesh.LODLevel1}-{mesh.LODLevel2}, Vtx: {mesh.VertexBuffers.Count})");
+            }
+            else if (blob is TextureContentBlob tex)
+            {
+                sb.Append($" ({tex.GetContents()?.Length ?? 0} bytes)");
+            }
+
+            // --- ADDED: Version Number ---
+            sb.Append($" [v{blob.VersionMajor}.{blob.VersionMinor}]");
+
+            return sb.ToString();
         }
 
         private string GetMetadataName(BundleMetadata meta)
         {
             try
             {
+                // Convert the uint Tag to a 4-character string (e.g. 0x4E616D65 -> "Name")
                 byte[] bytes = BitConverter.GetBytes(meta.Tag);
                 if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
+
                 string tagStr = Encoding.ASCII.GetString(bytes).Trim('\0', ' ');
-                if (tagStr.Any(c => c < 32 || c > 126)) return $"Metadata: 0x{meta.Tag:X8}";
+
+                // If the tag contains non-printable characters, show Hex instead
+                if (tagStr.Any(c => c < 32 || c > 126))
+                    return $"Metadata: 0x{meta.Tag:X8}";
+
                 return $"Metadata: {tagStr}";
             }
-            catch { return $"Metadata: 0x{meta.Tag:X8}"; }
+            catch
+            {
+                return $"Metadata: 0x{meta.Tag:X8}";
+            }
         }
 
-        private void TreeView_AfterSelect(object sender, TreeViewEventArgs e) => propertyGrid.SelectedObject = e.Node.Tag;
+        private void TreeView_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            object obj = e.Node.Tag;
+            propertyGrid.SelectedObject = obj;
+
+            // Update Hex View
+            byte[] data = null;
+            long offset = 0;
+
+            if (obj is BundleBlob blob)
+            {
+                data = blob.GetContents();
+                offset = blob.FileOffset;
+            }
+            else if (obj is BundleMetadata meta)
+            {
+                data = meta.GetContents();
+                offset = meta.FileOffset;
+            }
+
+            // Push data to the hex control created in step 1
+            if (embeddedHexView != null)
+            {
+                if (data != null)
+                {
+                    embeddedHexView.Data = data;
+                    embeddedHexView.StartOffset = offset;
+                    embeddedHexView.ReadOnly = true; // Safer for browse mode
+                }
+                else
+                {
+                    embeddedHexView.Data = new byte[0]; // Clear if no data
+                }
+            }
+        }
         private void TreeView_NodeMouseClick(object sender, TreeNodeMouseClickEventArgs e)
         {
             if (e.Button == MouseButtons.Right) treeView.SelectedNode = e.Node;
