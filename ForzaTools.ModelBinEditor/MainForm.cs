@@ -18,7 +18,7 @@ namespace ForzaTools.ModelBinEditor
     {
         // --- Fields ---
         private Bundle currentBundle;
-        private ForzaTools.CarScene.CarbinFile currentCarbin; // Added missing field for Carbin support
+        private ForzaTools.CarScene.CarbinFile currentCarbin;
         private string currentFilePath;
         private ContextMenuStrip propertyGridContextMenu;
         private ToolStripMenuItem viewPropertyHexMenuItem;
@@ -28,6 +28,7 @@ namespace ForzaTools.ModelBinEditor
         private System.Windows.Forms.ToolStripTextBox searchTextBox;
         private System.Windows.Forms.ToolStripButton searchButton;
         private System.Windows.Forms.ToolStripButton groupByTagButton;
+        private System.Windows.Forms.ToolStripButton reserializeButton; // New Button
         private System.Windows.Forms.TabControl rightTabControl;
         private System.Windows.Forms.TabPage propertyPage;
         private System.Windows.Forms.TabPage hexPage;
@@ -50,7 +51,6 @@ namespace ForzaTools.ModelBinEditor
             InitializeComponent();
 
             // --- UI SIZE ADJUSTMENTS ---
-            // Set larger default size (Double width ~2000, Taller ~1000)
             this.Size = new Size(1900, 1000);
             this.StartPosition = FormStartPosition.CenterScreen;
             // ---------------------------
@@ -102,14 +102,7 @@ namespace ForzaTools.ModelBinEditor
             this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
             this.searchButton = new System.Windows.Forms.ToolStripButton();
             this.groupByTagButton = new System.Windows.Forms.ToolStripButton();
-
-            this.toolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-                new System.Windows.Forms.ToolStripLabel("Search:"),
-                this.searchTextBox,
-                this.searchButton,
-                new System.Windows.Forms.ToolStripSeparator(),
-                this.groupByTagButton
-            });
+            this.reserializeButton = new System.Windows.Forms.ToolStripButton(); // Init
 
             this.searchTextBox.Size = new System.Drawing.Size(150, 23);
             this.searchButton.Text = "Find";
@@ -120,6 +113,21 @@ namespace ForzaTools.ModelBinEditor
             this.groupByTagButton.CheckOnClick = true;
             this.groupByTagButton.Checked = true;
             this.groupByTagButton.Click += (s, e) => PopulateTree();
+
+            // Reserialize Button Setup
+            this.reserializeButton.Text = "Reserialize";
+            this.reserializeButton.ToolTipText = "Upgrades all blobs to latest version and verifies serialization";
+            this.reserializeButton.Click += ReserializeButton_Click;
+
+            this.toolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+                new System.Windows.Forms.ToolStripLabel("Search:"),
+                this.searchTextBox,
+                this.searchButton,
+                new System.Windows.Forms.ToolStripSeparator(),
+                this.groupByTagButton,
+                new System.Windows.Forms.ToolStripSeparator(),
+                this.reserializeButton // Add to strip
+            });
 
             // 2. Adjust Layout and Add Controls
             if (this.splitContainer != null)
@@ -154,9 +162,7 @@ namespace ForzaTools.ModelBinEditor
         private void InitializeConsoleWindow()
         {
             consolePanel = new Panel();
-            // --- CONSOLE SIZE ADJUSTMENT ---
-            consolePanel.Height = 300; // Increased from 150 to 300
-            // -------------------------------
+            consolePanel.Height = 300;
             consolePanel.Dock = DockStyle.Bottom;
             consolePanel.Padding = new Padding(5);
             consolePanel.BackColor = SystemColors.ControlDark;
@@ -165,7 +171,7 @@ namespace ForzaTools.ModelBinEditor
             consoleBox.Dock = DockStyle.Fill;
             consoleBox.BackColor = Color.FromArgb(30, 30, 30);
             consoleBox.ForeColor = Color.LightGray;
-            consoleBox.Font = new Font("Consolas", 10f); // Slightly larger font for readability
+            consoleBox.Font = new Font("Consolas", 10f);
             consoleBox.ReadOnly = true;
             consoleBox.WordWrap = false;
             consoleBox.ScrollBars = RichTextBoxScrollBars.Vertical;
@@ -220,7 +226,7 @@ namespace ForzaTools.ModelBinEditor
                         currentCarbin = new ForzaTools.CarScene.CarbinFile();
                         currentCarbin.Load(fs);
                     }
-                    currentBundle = null; // Clear modelbin data
+                    currentBundle = null;
                     PopulateCarbinTree();
                     this.Text = $"Forza ModelBin Editor - {Path.GetFileName(path)} (Scene v{currentCarbin.Scene.Version})";
                     LogToConsole($"Loaded Scene {path}", Color.LimeGreen);
@@ -286,7 +292,6 @@ namespace ForzaTools.ModelBinEditor
 
         private void PopulateTree()
         {
-            // Safety check for UI initialization
             if (searchTextBox == null || groupByTagButton == null) return;
 
             treeView.BeginUpdate();
@@ -317,7 +322,7 @@ namespace ForzaTools.ModelBinEditor
                     TreeNode blobNode = new TreeNode(blobName);
                     blobNode.Tag = blob;
 
-                    // 1. Metadata
+                    // Metadata
                     TreeNode metaRoot = new TreeNode("Metadata");
                     foreach (var meta in blob.Metadatas)
                     {
@@ -327,7 +332,7 @@ namespace ForzaTools.ModelBinEditor
                     }
                     if (metaRoot.Nodes.Count > 0) blobNode.Nodes.Add(metaRoot);
 
-                    // 2. Special Blob Logic
+                    // Special Blob Logic
                     if (blob is SkeletonBlob skel)
                     {
                         TreeNode bonesRoot = new TreeNode($"BonesList ({skel.Bones.Count} items)");
@@ -366,7 +371,7 @@ namespace ForzaTools.ModelBinEditor
                         blobNode.Nodes.Add(subBundleNode);
                     }
 
-                    // 3. Add to Tree (Grouped or Flat)
+                    // Add to Tree (Grouped or Flat)
                     if (useGroups)
                     {
                         string typeName = blob.GetType().Name.Replace("Blob", "");
@@ -390,6 +395,131 @@ namespace ForzaTools.ModelBinEditor
             finally
             {
                 treeView.EndUpdate();
+            }
+        }
+
+        // --- Reserialize Logic ---
+
+        private void ReserializeButton_Click(object sender, EventArgs e)
+        {
+            if (currentBundle == null)
+            {
+                LogToConsole("No loaded bundle to reserialize.", Color.Yellow);
+                return;
+            }
+
+            LogToConsole("Starting full reserialization check...", Color.White);
+            int successCount = 0;
+            int failCount = 0;
+
+            for (int i = 0; i < currentBundle.Blobs.Count; i++)
+            {
+                var blob = currentBundle.Blobs[i];
+                string name = GetBlobName(blob, i);
+
+                try
+                {
+                    // 1. Upgrade to highest version supported by tool
+                    UpgradeBlobToMaxVersion(blob);
+
+                    // 2. Perform dry-run serialization
+                    using (var ms = new MemoryStream())
+                    {
+                        // Use leaveOpen: true to prevent closing ms when bs is disposed (though not strictly necessary here since ms handles it)
+                        // but good practice if we accessed ms properties later outside this block
+                        using (var bs = new BinaryStream(ms, ByteConverter.Little))
+                        {
+                            // We only test the data part, as header/metadata are handled by Bundle.Serialize
+                            blob.SerializeBlobData(bs);
+                        }
+
+                        LogToConsole($"  [OK] {name} serialized as v{blob.VersionMajor}.{blob.VersionMinor} ({ms.Length} bytes)", Color.Gray);
+                    }
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    LogToConsole($"  [FAIL] {name}: {ex.Message}", Color.Red);
+                    failCount++;
+                }
+            }
+
+            if (failCount == 0)
+                LogToConsole($"Reserialization complete. {successCount} blobs processed successfully.", Color.Cyan);
+            else
+                LogToConsole($"Reserialization complete with errors. Success: {successCount}, Failed: {failCount}", Color.Orange);
+
+            // Refresh tree to show new versions
+            PopulateTree();
+        }
+
+        private void UpgradeBlobToMaxVersion(BundleBlob blob)
+        {
+            if (blob is MeshBlob mesh)
+            {
+                // MeshBlob Max: 1.9 (FH5)
+                if (mesh.VersionMajor == 1 && mesh.VersionMinor < 9)
+                {
+                    // v1.9 uses MaterialIds[] array instead of single MaterialId
+                    if (mesh.MaterialIds == null || mesh.MaterialIds.Length != 4)
+                    {
+                        // Initialize with default/invalid (-1) except for the primary material
+                        mesh.MaterialIds = new short[] { -1, mesh.MaterialId, -1, -1 };
+                    }
+                    mesh.VersionMinor = 9;
+                }
+            }
+            else if (blob is ModelBlob model)
+            {
+                // ModelBlob Max: 1.3 (FH5)
+                if (model.VersionMajor == 1 && model.VersionMinor < 3)
+                {
+                    // v1.2 adds DecompressFlags (default 0), v1.3 adds UnkV1_3 (default 0)
+                    // These fields are auto-initialized to 0 in the class usually
+                    model.VersionMinor = 3;
+                }
+            }
+            else if (blob is MaterialShaderParameterBlob matParam)
+            {
+                // Max: 2.1 (ushort count)
+                // If it's v1.0, upgrading to v2.x requires hash calculation which we might not have names for
+                // safely assume we can only upgrade v2.0 -> v2.1
+                if (matParam.VersionMajor == 2 && matParam.VersionMinor < 1)
+                {
+                    matParam.VersionMinor = 1;
+                }
+            }
+            else if (blob is VertexLayoutBlob vLay)
+            {
+                // Max: 1.1 (Flags)
+                if (vLay.VersionMajor == 1 && vLay.VersionMinor < 1)
+                {
+                    vLay.VersionMinor = 1;
+                }
+            }
+            else if (blob is MatLBlob matL)
+            {
+                // Max: 1.2
+                if (matL.VersionMajor == 1 && matL.VersionMinor < 2)
+                {
+                    matL.VersionMinor = 2;
+                }
+            }
+            else if (blob is RenderTargetBlob rt)
+            {
+                // Max: 1.1 (IsInline)
+                if (rt.VersionMajor == 1 && rt.VersionMinor < 1)
+                {
+                    rt.VersionMinor = 1;
+                }
+            }
+            else if (blob is ManufacturerColorsBlob manuf)
+            {
+                // Max: 1.1 (UInt32 mask)
+                if (manuf.VersionMajor == 1 && manuf.VersionMinor < 1)
+                {
+                    manuf.VersionMinor = 1;
+                }
             }
         }
 
