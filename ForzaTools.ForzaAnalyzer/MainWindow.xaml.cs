@@ -1,5 +1,6 @@
-using ForzaTools.ForzaAnalyzer.Views; // Ensure this using is here
+using ForzaTools.ForzaAnalyzer.Views;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Composition.SystemBackdrops; // Required for the check
 
 namespace ForzaTools.ForzaAnalyzer
 {
@@ -8,9 +9,14 @@ namespace ForzaTools.ForzaAnalyzer
         public MainWindow()
         {
             this.InitializeComponent();
-            SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
 
-            // Navigate to the ShellPage
+            // FIX: Check if Mica is supported before applying it.
+            // If this check is missing, the window will be black/empty on Windows 10.
+            if (MicaController.IsSupported())
+            {
+           //     SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
+            }
+
             RootFrame.Navigate(typeof(ShellPage));
         }
     }
