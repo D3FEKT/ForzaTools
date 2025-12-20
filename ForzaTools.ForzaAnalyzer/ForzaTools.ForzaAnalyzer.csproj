@@ -27,6 +27,19 @@
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
   </ItemGroup>
 
+	<ItemGroup>
+		<ProjectReference Include="..\ForzaTools.Bundles\ForzaTools.Bundles.csproj" />
+		<ProjectReference Include="..\ForzaTools.Shared\ForzaTools.Shared.csproj" />
+		<ProjectReference Include="..\ForzaTools.Utils\ForzaTools.Utils.csproj" />
+		<ProjectReference Include="..\DurangoTypes\DurangoTypes.csproj" />
+	</ItemGroup>
+	
+<ItemGroup>
+  <Content Include="xcompress.dll">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </Content>
+</ItemGroup>
+
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
@@ -45,20 +58,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.251106002" />
     <PackageReference Include="Syroot.BinaryData" Version="5.2.2" />
   </ItemGroup>
-  <ItemGroup>
-    <Reference Include="DurangoTypes">
-      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\DurangoTypes.dll</HintPath>
-    </Reference>
-    <Reference Include="ForzaTools.Bundles">
-      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\ForzaTools.Bundles.dll</HintPath>
-    </Reference>
-    <Reference Include="ForzaTools.Shared">
-      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\ForzaTools.Shared.dll</HintPath>
-    </Reference>
-    <Reference Include="ForzaTools.Utils">
-      <HintPath>..\ForzaTools.Bundles\bin\Release\net9.0\ForzaTools.Utils.dll</HintPath>
-    </Reference>
-  </ItemGroup>
+
   <ItemGroup>
     <Page Update="Views\ShellPage.xaml">
       <Generator>MSBuild:Compile</Generator>

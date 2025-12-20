@@ -15,19 +15,15 @@
 
     <Grid>
         <NavigationView x:Name="NavView" 
-                        PaneDisplayMode="Left"
-                        IsSettingsVisible="False"
-                        SelectionChanged="NavView_SelectionChanged"
-                        MenuItemTemplate="{StaticResource FileItemTemplate}">
-
+                PaneDisplayMode="Left"
+                IsSettingsVisible="False"
+                SelectionChanged="NavView_SelectionChanged"
+                MenuItemTemplate="{StaticResource FileItemTemplate}"
+                MenuItemsSource="{x:Bind ViewModel.Files, Mode=OneWay}">
             <NavigationView.MenuItems>
                 <NavigationViewItem Icon="Home" Content="Home" Tag="Home"/>
                 <NavigationViewItemSeparator/>
             </NavigationView.MenuItems>
-
-            <NavigationView.MenuItemsSource>
-                <x:Bind Path="ViewModel.Files" Mode="OneWay"/>
-            </NavigationView.MenuItemsSource>
 
             <Frame x:Name="ContentFrame"/>
         </NavigationView>
