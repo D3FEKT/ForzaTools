@@ -1,0 +1,23 @@
+<Page
+    x:Class="ForzaTools.ForzaAnalyzer.Views.FileDetailsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:vm="using:ForzaTools.ForzaAnalyzer.ViewModels"
+    mc:Ignorable="d">
+
+    <Grid Padding="24">
+        <StackPanel Spacing="12">
+            <TextBlock Text="{x:Bind ViewModel.FileName, Mode=OneWay}" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="{x:Bind ViewModel.FileType, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}" Foreground="Gray"/>
+
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                    BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,24,0,0">
+                <TextBlock Text="Detailed parsing results will appear here." 
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+        </StackPanel>
+    </Grid>
+</Page>

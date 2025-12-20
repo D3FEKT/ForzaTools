@@ -63,7 +63,10 @@ namespace ForzaTools.ModelBinEditor
                     string relPath = Path.GetFileName(modelFile); // Keep it short for log
                     try
                     {
-                        bool result = ConvertModelBin(modelFile);
+                        // Pass a lambda to forward converter logs to our batch log with "INFO" level
+                        // We also indent them slightly for readability
+                        bool result = ConvertModelBin(modelFile, (msg) => log?.Invoke($"      [Converter] {msg}", "INFO"));
+
                         if (result)
                         {
                             log?.Invoke($"    [CONVERTED] {relPath}", "SUCCESS");
@@ -100,7 +103,7 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
-        private bool ConvertModelBin(string filePath)
+        private bool ConvertModelBin(string filePath, Action<string> logConverter)
         {
             // Load
             var bundle = new Bundle();
@@ -109,8 +112,8 @@ namespace ForzaTools.ModelBinEditor
                 bundle.Load(fs);
             }
 
-            // Convert
-            bool modified = ModelConverter.MakeFH5Compatible(bundle);
+            // Convert - Passing the logger delegate
+            bool modified = ModelConverter.MakeFH5Compatible(bundle, logConverter);
 
             // Save only if modified
             if (modified)

@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ForzaTools.ForzaAnalyzer (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "ForzaTools.ForzaAnalyzer (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

@@ -28,7 +28,7 @@ namespace ForzaTools.ModelBinEditor
         private System.Windows.Forms.ToolStripTextBox searchTextBox;
         private System.Windows.Forms.ToolStripButton searchButton;
         private System.Windows.Forms.ToolStripButton groupByTagButton;
-        private System.Windows.Forms.ToolStripButton reserializeButton; // New Button
+        private System.Windows.Forms.ToolStripButton reserializeButton;
         private System.Windows.Forms.TabControl rightTabControl;
         private System.Windows.Forms.TabPage propertyPage;
         private System.Windows.Forms.TabPage hexPage;
@@ -57,8 +57,8 @@ namespace ForzaTools.ModelBinEditor
 
             InitializePropertyGridContextMenu();
             InitializeTargetVersionDropdown();
-            InitializeEnhancedUI();     // Build tabs, toolbar, hex view
-            InitializeConsoleWindow();  // Build bottom console
+            InitializeEnhancedUI();
+            InitializeConsoleWindow();
         }
 
         // --- Initialization ---
@@ -97,12 +97,11 @@ namespace ForzaTools.ModelBinEditor
 
         private void InitializeEnhancedUI()
         {
-            // 1. ToolStrip Setup
             this.toolStrip = new System.Windows.Forms.ToolStrip();
             this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
             this.searchButton = new System.Windows.Forms.ToolStripButton();
             this.groupByTagButton = new System.Windows.Forms.ToolStripButton();
-            this.reserializeButton = new System.Windows.Forms.ToolStripButton(); // Init
+            this.reserializeButton = new System.Windows.Forms.ToolStripButton();
 
             this.searchTextBox.Size = new System.Drawing.Size(150, 23);
             this.searchButton.Text = "Find";
@@ -114,7 +113,6 @@ namespace ForzaTools.ModelBinEditor
             this.groupByTagButton.Checked = true;
             this.groupByTagButton.Click += (s, e) => PopulateTree();
 
-            // Reserialize Button Setup
             this.reserializeButton.Text = "Reserialize";
             this.reserializeButton.ToolTipText = "Upgrades all blobs to latest version and verifies serialization";
             this.reserializeButton.Click += ReserializeButton_Click;
@@ -126,17 +124,15 @@ namespace ForzaTools.ModelBinEditor
                 new System.Windows.Forms.ToolStripSeparator(),
                 this.groupByTagButton,
                 new System.Windows.Forms.ToolStripSeparator(),
-                this.reserializeButton // Add to strip
+                this.reserializeButton
             });
 
-            // 2. Adjust Layout and Add Controls
             if (this.splitContainer != null)
             {
                 this.splitContainer.Panel1.Controls.Add(this.toolStrip);
                 this.treeView.Top = 25;
                 this.treeView.Height -= 25;
 
-                // 3. Tab Control Setup
                 this.rightTabControl = new System.Windows.Forms.TabControl();
                 this.propertyPage = new System.Windows.Forms.TabPage("Properties");
                 this.hexPage = new System.Windows.Forms.TabPage("Hex View");
@@ -145,11 +141,9 @@ namespace ForzaTools.ModelBinEditor
                 this.rightTabControl.Controls.Add(this.propertyPage);
                 this.rightTabControl.Controls.Add(this.hexPage);
 
-                // Move PropertyGrid
                 this.propertyGrid.Parent = this.propertyPage;
                 this.propertyGrid.Dock = DockStyle.Fill;
 
-                // Add Embedded Hex View
                 this.embeddedHexView = new HexViewControl();
                 this.embeddedHexView.Dock = DockStyle.Fill;
                 this.hexPage.Controls.Add(this.embeddedHexView);
@@ -179,7 +173,6 @@ namespace ForzaTools.ModelBinEditor
             consolePanel.Controls.Add(consoleBox);
             this.Controls.Add(consolePanel);
 
-            // Ensure Correct Z-Order
             this.Controls.SetChildIndex(this.splitContainer, 0);
             this.Controls.SetChildIndex(this.consolePanel, 1);
             if (this.bottomPanel != null)
@@ -288,7 +281,7 @@ namespace ForzaTools.ModelBinEditor
 
         private void Exit_Click(object sender, EventArgs e) => Close();
 
-        // --- Tree View Logic (ModelBin) ---
+        // --- Tree View Logic ---
 
         private void PopulateTree()
         {
@@ -315,14 +308,12 @@ namespace ForzaTools.ModelBinEditor
                     var blob = currentBundle.Blobs[i];
                     string blobName = GetBlobName(blob, i);
 
-                    // Filter
                     if (!string.IsNullOrEmpty(filter) && !blobName.ToLower().Contains(filter))
                         continue;
 
                     TreeNode blobNode = new TreeNode(blobName);
                     blobNode.Tag = blob;
 
-                    // Metadata
                     TreeNode metaRoot = new TreeNode("Metadata");
                     foreach (var meta in blob.Metadatas)
                     {
@@ -332,7 +323,6 @@ namespace ForzaTools.ModelBinEditor
                     }
                     if (metaRoot.Nodes.Count > 0) blobNode.Nodes.Add(metaRoot);
 
-                    // Special Blob Logic
                     if (blob is SkeletonBlob skel)
                     {
                         TreeNode bonesRoot = new TreeNode($"BonesList ({skel.Bones.Count} items)");
@@ -371,7 +361,6 @@ namespace ForzaTools.ModelBinEditor
                         blobNode.Nodes.Add(subBundleNode);
                     }
 
-                    // Add to Tree (Grouped or Flat)
                     if (useGroups)
                     {
                         string typeName = blob.GetType().Name.Replace("Blob", "");
@@ -398,8 +387,6 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
-        // --- Reserialize Logic ---
-
         private void ReserializeButton_Click(object sender, EventArgs e)
         {
             if (currentBundle == null)
@@ -419,20 +406,14 @@ namespace ForzaTools.ModelBinEditor
 
                 try
                 {
-                    // 1. Upgrade to highest version supported by tool
                     UpgradeBlobToMaxVersion(blob);
 
-                    // 2. Perform dry-run serialization
                     using (var ms = new MemoryStream())
                     {
-                        // Use leaveOpen: true to prevent closing ms when bs is disposed (though not strictly necessary here since ms handles it)
-                        // but good practice if we accessed ms properties later outside this block
                         using (var bs = new BinaryStream(ms, ByteConverter.Little))
                         {
-                            // We only test the data part, as header/metadata are handled by Bundle.Serialize
                             blob.SerializeBlobData(bs);
                         }
-
                         LogToConsole($"  [OK] {name} serialized as v{blob.VersionMajor}.{blob.VersionMinor} ({ms.Length} bytes)", Color.Gray);
                     }
                     successCount++;
@@ -449,7 +430,6 @@ namespace ForzaTools.ModelBinEditor
             else
                 LogToConsole($"Reserialization complete with errors. Success: {successCount}, Failed: {failCount}", Color.Orange);
 
-            // Refresh tree to show new versions
             PopulateTree();
         }
 
@@ -457,13 +437,10 @@ namespace ForzaTools.ModelBinEditor
         {
             if (blob is MeshBlob mesh)
             {
-                // MeshBlob Max: 1.9 (FH5)
                 if (mesh.VersionMajor == 1 && mesh.VersionMinor < 9)
                 {
-                    // v1.9 uses MaterialIds[] array instead of single MaterialId
                     if (mesh.MaterialIds == null || mesh.MaterialIds.Length != 4)
                     {
-                        // Initialize with default/invalid (-1) except for the primary material
                         mesh.MaterialIds = new short[] { -1, mesh.MaterialId, -1, -1 };
                     }
                     mesh.VersionMinor = 9;
@@ -471,19 +448,13 @@ namespace ForzaTools.ModelBinEditor
             }
             else if (blob is ModelBlob model)
             {
-                // ModelBlob Max: 1.3 (FH5)
                 if (model.VersionMajor == 1 && model.VersionMinor < 3)
                 {
-                    // v1.2 adds DecompressFlags (default 0), v1.3 adds UnkV1_3 (default 0)
-                    // These fields are auto-initialized to 0 in the class usually
                     model.VersionMinor = 3;
                 }
             }
             else if (blob is MaterialShaderParameterBlob matParam)
             {
-                // Max: 2.1 (ushort count)
-                // If it's v1.0, upgrading to v2.x requires hash calculation which we might not have names for
-                // safely assume we can only upgrade v2.0 -> v2.1
                 if (matParam.VersionMajor == 2 && matParam.VersionMinor < 1)
                 {
                     matParam.VersionMinor = 1;
@@ -491,7 +462,6 @@ namespace ForzaTools.ModelBinEditor
             }
             else if (blob is VertexLayoutBlob vLay)
             {
-                // Max: 1.1 (Flags)
                 if (vLay.VersionMajor == 1 && vLay.VersionMinor < 1)
                 {
                     vLay.VersionMinor = 1;
@@ -499,7 +469,6 @@ namespace ForzaTools.ModelBinEditor
             }
             else if (blob is MatLBlob matL)
             {
-                // Max: 1.2
                 if (matL.VersionMajor == 1 && matL.VersionMinor < 2)
                 {
                     matL.VersionMinor = 2;
@@ -507,7 +476,6 @@ namespace ForzaTools.ModelBinEditor
             }
             else if (blob is RenderTargetBlob rt)
             {
-                // Max: 1.1 (IsInline)
                 if (rt.VersionMajor == 1 && rt.VersionMinor < 1)
                 {
                     rt.VersionMinor = 1;
@@ -515,15 +483,12 @@ namespace ForzaTools.ModelBinEditor
             }
             else if (blob is ManufacturerColorsBlob manuf)
             {
-                // Max: 1.1 (UInt32 mask)
                 if (manuf.VersionMajor == 1 && manuf.VersionMinor < 1)
                 {
                     manuf.VersionMinor = 1;
                 }
             }
         }
-
-        // --- Tree View Logic (Carbin) ---
 
         private void PopulateCarbinTree()
         {
@@ -669,7 +634,6 @@ namespace ForzaTools.ModelBinEditor
             object obj = e.Node.Tag;
             propertyGrid.SelectedObject = obj;
 
-            // Update Hex View
             byte[] data = null;
             long offset = 0;
 
@@ -682,7 +646,7 @@ namespace ForzaTools.ModelBinEditor
                 {
                     embeddedHexView.Data = data;
                     embeddedHexView.StartOffset = offset;
-                    embeddedHexView.ReadOnly = true; // Browse mode
+                    embeddedHexView.ReadOnly = true;
                 }
                 else
                 {
@@ -706,7 +670,6 @@ namespace ForzaTools.ModelBinEditor
                 return;
             }
 
-            // --- CARBIN CONVERSION ---
             if (currentCarbin != null)
             {
                 try
@@ -726,7 +689,6 @@ namespace ForzaTools.ModelBinEditor
                 return;
             }
 
-            // --- MODELBIN CONVERSION ---
             if (currentBundle != null)
             {
                 var selectedProfile = targetVersionComboBox.SelectedItem as GameProfile;
@@ -738,7 +700,8 @@ namespace ForzaTools.ModelBinEditor
 
                 try
                 {
-                    bool modified = ModelConverter.MakeFH5Compatible(currentBundle);
+                    // FIX: Pass the Logger delegate here
+                    bool modified = ModelConverter.MakeFH5Compatible(currentBundle, (msg) => LogToConsole(msg, Color.White));
 
                     if (modified)
                     {
@@ -757,8 +720,8 @@ namespace ForzaTools.ModelBinEditor
                     }
                     else
                     {
-                        MessageBox.Show("Model appears to already be compatible with FH5.", "No Changes Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        LogToConsole("ModelBin conversion skipped (Already FH5 compatible).", Color.Yellow);
+                        MessageBox.Show("Model appears to already be compatible with FH5 (or no compatible meshes found).", "No Changes Made", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        LogToConsole("ModelBin conversion skipped.", Color.Yellow);
                     }
                 }
                 catch (Exception ex)
@@ -814,8 +777,6 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
-        // --- Hex View Popups ---
-
         private void ViewHex_Click(object sender, EventArgs e)
         {
             if (treeView.SelectedNode?.Tag == null) return;
@@ -866,8 +827,6 @@ namespace ForzaTools.ModelBinEditor
             }
         }
 
-        // --- Helpers ---
-
         private void UpdateObjectData(object obj, byte[] newData)
         {
             var field = obj.GetType().GetField("_data", BindingFlags.NonPublic | BindingFlags.Instance)
@@ -877,7 +836,6 @@ namespace ForzaTools.ModelBinEditor
             var pubProp = obj.GetType().GetProperty("Data");
             if (pubProp != null && pubProp.PropertyType == typeof(byte[])) pubProp.SetValue(obj, newData);
 
-            // Re-read structure if applicable
             using (var ms = new MemoryStream(newData))
             using (var bs = new BinaryStream(ms))
             {
