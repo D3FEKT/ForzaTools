@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using ForzaTools.Bundles;
 using ForzaTools.Bundles.Blobs;
 using ForzaTools.Bundles.Metadata;
@@ -12,10 +13,16 @@ namespace ForzaTools.ForzaAnalyzer.Services
     public sealed class ForzaGeometryData
     {
         public string Name;
+
+        // Render Data
         public Vector3[] Positions;
         public Vector3[] Normals;
         public Vector2[] UVs;
         public int[] Indices;
+
+        // EDITING SUPPORT
+        public MeshBlob SourceMesh;
+        public Vector3[] RawPositions; // Normalized -1..1 values (before Scale/Translate)
     }
 
     public sealed class ImporterResult
@@ -29,7 +36,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
         private readonly List<string> _logs = new();
         private void Log(string s) => _logs.Add(s);
 
-        // Header size const
+        private string _debugPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "model_debug_dump.txt");
         private const int MODEL_BUFFER_HEADER_SIZE = 16;
 
         private class ElementInfo
@@ -40,6 +47,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
         public ImporterResult ExtractModels(Bundle bundle)
         {
+            // (Debug file writing removed for brevity, keep if needed)
             var result = new ImporterResult();
             _logs.Clear();
 
@@ -75,7 +83,6 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
             foreach (var mesh in meshes)
             {
-                // Skip low LODs logic preserved
                 if ((mesh.LODFlags & 0b1111) == 0 && !mesh.LOD_LOD0) continue;
 
                 try
@@ -100,6 +107,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
             var layout = layouts[mesh.VertexLayoutIndex];
             string name = mesh.Metadatas.OfType<NameMetadata>().FirstOrDefault()?.Name ?? "Mesh";
 
+            // 1. INDICES
             int indexStride = mesh.Is32BitIndices ? 4 : 2;
             int indexCount = mesh.IndexCount;
             long startIndexOffset = MODEL_BUFFER_HEADER_SIZE + ((long)mesh.IndexBufferDrawOffset * indexStride);
@@ -121,8 +129,14 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 }
             }
 
+            // 2. VERTICES
             int vertexCount = (maxIndex - minIndex) + 1;
-            var posW = new Vector4[vertexCount];
+
+            // We store RawPositions (normalized) AND FinalPositions
+            var rawPos = new Vector3[vertexCount];
+            var finalPos = new Vector3[vertexCount];
+
+            var posW = new Vector4[vertexCount]; // Temp storage for W component (Normal X)
             var normals = new Vector3[vertexCount];
             var uvs = new Vector2[vertexCount];
 
@@ -143,7 +157,10 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 if (GetSemanticName(layout, item.Desc) != "POSITION") continue;
                 ReadBuffer(mesh, vbMap, item.Desc, item.Offset, minIndex, vertexCount, (br, i) =>
                 {
-                    posW[i] = ReadPosition(br, (int)item.Desc.Format, mesh);
+                    // Read Raw (Normalized) and Decompressed values
+                    var (raw, decompressed, w) = ReadPositionFull(br, (int)item.Desc.Format, mesh);
+                    rawPos[i] = raw;
+                    posW[i] = new Vector4(decompressed, w);
                 });
             }
 
@@ -163,9 +180,6 @@ namespace ForzaTools.ForzaAnalyzer.Services
             }
 
             // TRANSFORM
-            var finalPos = new Vector3[vertexCount];
-            var finalIndices = new int[indices.Length];
-
             bool hasBone = boneMatrices != null && mesh.RigidBoneIndex >= 0 && mesh.RigidBoneIndex < boneMatrices.Length;
             var transform = hasBone ? boneMatrices[mesh.RigidBoneIndex] : Matrix4x4.Identity;
 
@@ -180,16 +194,13 @@ namespace ForzaTools.ForzaAnalyzer.Services
                     n = Vector3.TransformNormal(n, transform);
                 }
 
-                // REMOVED SWIZZLE: Keeping Original Coordinates (likely Y-Up)
                 finalPos[i] = p;
                 normals[i] = n;
             }
 
-            // REMOVED WINDING FLIP: Because we didn't mirror the geometry, we don't swap indices.
-            for (int i = 0; i < indices.Length; i++)
-            {
-                finalIndices[i] = indices[i] - minIndex;
-            }
+            // Re-index
+            var finalIndices = new int[indices.Length];
+            for (int i = 0; i < indices.Length; i++) finalIndices[i] = indices[i] - minIndex;
 
             return new ForzaGeometryData
             {
@@ -197,18 +208,13 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 Positions = finalPos,
                 Normals = normals,
                 UVs = uvs,
-                Indices = finalIndices
+                Indices = finalIndices,
+                SourceMesh = mesh,      // LINKED FOR SAVING
+                RawPositions = rawPos   // SAVED FOR LIVE EDITING
             };
         }
 
-        private void ReadBuffer(
-            MeshBlob mesh,
-            Dictionary<int, VertexBufferBlob> vbMap,
-            D3D12_INPUT_LAYOUT_DESC element,
-            int offsetInStride,
-            int minIndex,
-            int count,
-            Action<BinaryReader, int> readAction)
+        private void ReadBuffer(MeshBlob mesh, Dictionary<int, VertexBufferBlob> vbMap, D3D12_INPUT_LAYOUT_DESC element, int offsetInStride, int minIndex, int count, Action<BinaryReader, int> readAction)
         {
             var usage = mesh.VertexBuffers.FirstOrDefault(v => v.InputSlot == element.InputSlot);
             if (usage == null || !vbMap.TryGetValue(usage.Index, out var vb)) return;
@@ -225,7 +231,6 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 {
                     long vertexId = minIndex + i + mesh.IndexedVertexOffset;
                     long addr = usageOffset + (vertexId * stride) + offsetInStride;
-
                     if (addr >= 0 && addr + 4 <= data.Length)
                     {
                         ms.Position = addr;
@@ -235,77 +240,43 @@ namespace ForzaTools.ForzaAnalyzer.Services
             }
         }
 
-        private byte[] Flatten(VertexBufferBlob vb)
-        {
-            if (vb.Header?.Data != null) return vb.Header.Data.SelectMany(x => x).ToArray();
-            return Array.Empty<byte>();
-        }
+        private byte[] Flatten(VertexBufferBlob vb) => vb.Header?.Data != null ? vb.Header.Data.SelectMany(x => x).ToArray() : Array.Empty<byte>();
+        private string GetSemanticName(VertexLayoutBlob layout, D3D12_INPUT_LAYOUT_DESC element) => (element.SemanticNameIndex >= 0 && element.SemanticNameIndex < layout.SemanticNames.Count) ? layout.SemanticNames[element.SemanticNameIndex] : "UNKNOWN";
+        private int GetFormatSize(int fmt) => fmt switch { 6 => 12, 10 => 8, 13 => 8, 16 => 8, 24 => 4, 28 => 4, 35 => 4, 37 => 4, _ => 4 };
 
-        private string GetSemanticName(VertexLayoutBlob layout, D3D12_INPUT_LAYOUT_DESC element)
+        // UPDATED DECODER: Returns both Raw and Final values
+        private static (Vector3 Raw, Vector3 Decompressed, float W) ReadPositionFull(BinaryReader br, int format, MeshBlob mesh)
         {
-            if (element.SemanticNameIndex >= 0 && element.SemanticNameIndex < layout.SemanticNames.Count)
-                return layout.SemanticNames[element.SemanticNameIndex];
-            return "UNKNOWN";
-        }
-
-        private int GetFormatSize(int fmt) => fmt switch
-        {
-            6 => 12,
-            10 => 8,
-            13 => 8,
-            16 => 8,
-            24 => 4,
-            28 => 4,
-            35 => 4,
-            37 => 4,
-            _ => 4
-        };
-
-        private static Vector4 ReadPosition(BinaryReader br, int format, MeshBlob mesh)
-        {
-            if (format == 13)
+            if (format == 13) // SNORM16
             {
-                float x = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
-                float y = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
-                float z = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                float rx = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                float ry = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                float rz = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
                 float w = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+
+                float x = rx, y = ry, z = rz;
+
                 if (mesh.PositionScale != Vector4.Zero)
                 {
                     x = x * mesh.PositionScale.X + mesh.PositionTranslate.X;
                     y = y * mesh.PositionScale.Y + mesh.PositionTranslate.Y;
                     z = z * mesh.PositionScale.Z + mesh.PositionTranslate.Z;
                 }
-                return new Vector4(x, y, z, w);
+                return (new Vector3(rx, ry, rz), new Vector3(x, y, z), w);
             }
-            if (format == 6) return new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), 1f);
-            return Vector4.Zero;
+            if (format == 6) // FLOAT32
+            {
+                float x = br.ReadSingle(); float y = br.ReadSingle(); float z = br.ReadSingle();
+                return (new Vector3(x, y, z), new Vector3(x, y, z), 1f);
+            }
+            return (Vector3.Zero, Vector3.Zero, 0);
         }
 
         private static Vector3 ReadNormal(BinaryReader br, int format, float wFromPos)
         {
-            if (format == 37)
-            {
-                float nx = wFromPos;
-                float ny = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
-                float nz = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
-                return Vector3.Normalize(new Vector3(nx, ny, nz));
-            }
-            if (format == 10)
-            {
-                float nx = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16());
-                float ny = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16());
-                float nz = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16());
-                br.ReadUInt16();
-                return Vector3.Normalize(new Vector3(nx, ny, nz));
-            }
-            if (format == 24)
-            {
-                uint v = br.ReadUInt32();
-                float nx = ((v >> 0) & 0x3FF) / 1023f * 2f - 1f;
-                float ny = ((v >> 10) & 0x3FF) / 1023f * 2f - 1f;
-                float nz = ((v >> 20) & 0x3FF) / 1023f * 2f - 1f;
-                return Vector3.Normalize(new Vector3(nx, ny, nz));
-            }
+            if (format == 37) { float nx = wFromPos; float ny = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f); float nz = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f); return Vector3.Normalize(new Vector3(nx, ny, nz)); }
+            if (format == 10) { float nx = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16()); float ny = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16()); float nz = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16()); br.ReadUInt16(); return Vector3.Normalize(new Vector3(nx, ny, nz)); }
+            if (format == 24) { uint v = br.ReadUInt32(); float nx = ((v >> 0) & 0x3FF) / 1023f * 2f - 1f; float ny = ((v >> 10) & 0x3FF) / 1023f * 2f - 1f; float nz = ((v >> 20) & 0x3FF) / 1023f * 2f - 1f; return Vector3.Normalize(new Vector3(nx, ny, nz)); }
             return Vector3.UnitY;
         }
 

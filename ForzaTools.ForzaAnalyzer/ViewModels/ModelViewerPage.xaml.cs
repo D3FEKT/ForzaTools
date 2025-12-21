@@ -6,21 +6,22 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using System;
-using System.Collections.ObjectModel;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Windows.UI;
 using SDX = SharpDX;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
+using System.Numerics; // For Vector3/Vector4
 
 namespace ForzaTools.ForzaAnalyzer.Views
 {
-    // Updated ViewModel for Mesh List
     public class ForzaMeshViewModel : INotifyPropertyChanged
     {
         public string Name { get; set; }
         public int Id { get; set; }
+        public ForzaGeometryData Data { get; set; } // Reference to raw data
 
         private bool _isVisible = true;
         public bool IsVisible
@@ -41,9 +42,8 @@ namespace ForzaTools.ForzaAnalyzer.Views
 
         private Viewport3DX _viewport;
         private GroupModel3D _modelGroup;
-
-        // Dictionary to map ViewModels to actual 3D objects for toggling
         private Dictionary<ForzaMeshViewModel, MeshGeometryModel3D> _meshRenderMap = new();
+        private bool _isUpdatingUi = false; // Prevent loop
 
         public bool IsLoading
         {
@@ -91,7 +91,6 @@ namespace ForzaTools.ForzaAnalyzer.Views
                 };
 
                 _modelGroup = new GroupModel3D();
-                AddDefaultCube();
 
                 _viewport.Items.Add(new DirectionalLight3D { Direction = new SDX.Vector3(-1, -1, -1), Color = Microsoft.UI.Colors.White });
                 _viewport.Items.Add(new AmbientLight3D { Color = Color.FromArgb(255, 100, 100, 100) });
@@ -99,19 +98,7 @@ namespace ForzaTools.ForzaAnalyzer.Views
 
                 ViewportContainer.Children.Add(_viewport);
             }
-            catch (Exception ex) { Log($"CRITICAL INIT ERROR: {ex.Message}"); }
-        }
-
-        private void AddDefaultCube()
-        {
-            var builder = new MeshBuilder();
-            builder.AddBox(new SDX.Vector3(0, 0, 0), 10, 10, 10);
-            _modelGroup.Children.Add(new MeshGeometryModel3D
-            {
-                Geometry = builder.ToMesh(),
-                Material = new PhongMaterial { DiffuseColor = new SDX.Color4(0.0f, 0.47f, 0.84f, 1.0f) },
-                CullMode = SDX.Direct3D11.CullMode.Back
-            });
+            catch { }
         }
 
         private async void FileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -127,48 +114,27 @@ namespace ForzaTools.ForzaAnalyzer.Views
 
             try
             {
-                Log($"Parsing {fileVm.FileName}...");
                 var result = await Task.Run(() => { var importer = new ModelImporter(); return importer.ExtractModels(bundle); });
 
                 this.DispatcherQueue.TryEnqueue(() =>
                 {
-                    foreach (var log in result.Logs) Log(log);
-
-                    if (result.Meshes.Count == 0)
-                    {
-                        AddDefaultCube();
-                        IsLoading = false;
-                        return;
-                    }
-
                     for (int i = 0; i < result.Meshes.Count; i++)
                     {
                         var data = result.Meshes[i];
-
-                        // Create 3D Object
                         var mesh3d = CreateMesh3D(data);
-                        _modelGroup.Children.Add(mesh3d); // Add all by default
+                        _modelGroup.Children.Add(mesh3d);
 
-                        // Create ViewModel
-                        var meshVm = new ForzaMeshViewModel
-                        {
-                            Name = data.Name,
-                            Id = i,
-                            IsVisible = true
-                        };
-
-                        // Link them
+                        var meshVm = new ForzaMeshViewModel { Name = data.Name, Id = i, IsVisible = true, Data = data };
                         _meshRenderMap[meshVm] = mesh3d;
                         meshVm.PropertyChanged += MeshVm_PropertyChanged;
-
                         Meshes.Add(meshVm);
                     }
 
-                    _viewport.Camera.ZoomExtents(_viewport, 200);
+                    if (Meshes.Count > 0) _viewport.Camera.ZoomExtents(_viewport, 200);
                     IsLoading = false;
                 });
             }
-            catch (Exception ex) { Log($"Error: {ex.Message}"); IsLoading = false; }
+            catch { IsLoading = false; }
         }
 
         private void MeshVm_PropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -177,7 +143,7 @@ namespace ForzaTools.ForzaAnalyzer.Views
             {
                 if (sender is ForzaMeshViewModel vm && _meshRenderMap.TryGetValue(vm, out var mesh3d))
                 {
-                    mesh3d.IsRendering = vm.IsVisible; // Efficiently toggle visibility
+                    mesh3d.IsRendering = vm.IsVisible;
                 }
             }
         }
@@ -185,41 +151,91 @@ namespace ForzaTools.ForzaAnalyzer.Views
         private MeshGeometryModel3D CreateMesh3D(ForzaGeometryData data)
         {
             var geometry = new MeshGeometry3D();
+            var posCol = new Vector3Collection(); foreach (var p in data.Positions) posCol.Add(new SDX.Vector3(p.X, p.Y, p.Z));
+            var normCol = new Vector3Collection(); foreach (var n in data.Normals) normCol.Add(new SDX.Vector3(n.X, n.Y, n.Z));
+            var uvCol = new Vector2Collection(); foreach (var u in data.UVs) uvCol.Add(new SDX.Vector2(u.X, u.Y));
+            var indCol = new IntCollection(); foreach (var i in data.Indices) indCol.Add(i);
 
-            // Helix uses SharpDX types
-            var posCol = new Vector3Collection();
-            foreach (var p in data.Positions) posCol.Add(new SDX.Vector3(p.X, p.Y, p.Z));
-
-            var normCol = new Vector3Collection();
-            foreach (var n in data.Normals) normCol.Add(new SDX.Vector3(n.X, n.Y, n.Z));
-
-            var uvCol = new Vector2Collection();
-            foreach (var u in data.UVs) uvCol.Add(new SDX.Vector2(u.X, u.Y));
-
-            var indCol = new IntCollection();
-            foreach (var i in data.Indices) indCol.Add(i);
-
-            geometry.Positions = posCol;
-            geometry.Normals = normCol;
-            geometry.TextureCoordinates = uvCol;
-            geometry.TriangleIndices = indCol;
+            geometry.Positions = posCol; geometry.Normals = normCol; geometry.TextureCoordinates = uvCol; geometry.TriangleIndices = indCol;
             geometry.UpdateBounds();
 
             var rnd = new Random(data.Name?.GetHashCode() ?? 0);
-            var matColor = new SDX.Color4((float)rnd.NextDouble(), (float)rnd.NextDouble(), (float)rnd.NextDouble(), 1.0f);
-
             return new MeshGeometryModel3D
             {
                 Geometry = geometry,
-                Material = new PhongMaterial { DiffuseColor = matColor },
+                Material = new PhongMaterial { DiffuseColor = new SDX.Color4((float)rnd.NextDouble(), (float)rnd.NextDouble(), (float)rnd.NextDouble(), 1.0f) },
                 CullMode = SDX.Direct3D11.CullMode.Back
             };
         }
 
-        private void Log(string message)
+        // --- LIVE EDITING LOGIC ---
+
+        private void CheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            if (this.DispatcherQueue.HasThreadAccess) ErrorLog.Text += $"{DateTime.Now:mm:ss}: {message}\n";
-            else this.DispatcherQueue.TryEnqueue(() => ErrorLog.Text += $"{DateTime.Now:mm:ss}: {message}\n");
+            // Populate UI fields from the clicked mesh
+            if (sender is CheckBox cb && cb.DataContext is ForzaMeshViewModel vm && vm.IsVisible)
+            {
+                _isUpdatingUi = true;
+                var mesh = vm.Data.SourceMesh;
+                ScaleX.Text = mesh.PositionScale.X.ToString("0.0000");
+                ScaleY.Text = mesh.PositionScale.Y.ToString("0.0000");
+                ScaleZ.Text = mesh.PositionScale.Z.ToString("0.0000");
+
+                TransX.Text = mesh.PositionTranslate.X.ToString("0.0000");
+                TransY.Text = mesh.PositionTranslate.Y.ToString("0.0000");
+                TransZ.Text = mesh.PositionTranslate.Z.ToString("0.0000");
+                _isUpdatingUi = false;
+            }
+        }
+
+        private void Transform_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isUpdatingUi) return;
+
+            // Parse inputs
+            if (!float.TryParse(ScaleX.Text, out float sx)) return;
+            if (!float.TryParse(ScaleY.Text, out float sy)) return;
+            if (!float.TryParse(ScaleZ.Text, out float sz)) return;
+            if (!float.TryParse(TransX.Text, out float tx)) return;
+            if (!float.TryParse(TransY.Text, out float ty)) return;
+            if (!float.TryParse(TransZ.Text, out float tz)) return;
+
+            var newScale = new Vector3(sx, sy, sz);
+            var newTrans = new Vector3(tx, ty, tz);
+
+            foreach (var vm in Meshes)
+            {
+                if (vm.IsVisible && _meshRenderMap.TryGetValue(vm, out var mesh3d))
+                {
+                    // 1. Update Source Blob (for saving)
+                    var meshBlob = vm.Data.SourceMesh;
+                    meshBlob.PositionScale = new Vector4(sx, sy, sz, meshBlob.PositionScale.W);
+                    meshBlob.PositionTranslate = new Vector4(tx, ty, tz, meshBlob.PositionTranslate.W);
+
+                    // 2. Re-calculate Vertex Positions Live
+                    // Formula: Pos = Raw * Scale + Translate
+                    var geometry = mesh3d.Geometry as MeshGeometry3D;
+                    if (geometry == null) continue;
+
+                    var newPositions = new Vector3Collection(vm.Data.RawPositions.Length);
+                    for (int i = 0; i < vm.Data.RawPositions.Length; i++)
+                    {
+                        Vector3 raw = vm.Data.RawPositions[i];
+
+                        // Calculate new position
+                        float nx = raw.X * sx + tx;
+                        float ny = raw.Y * sy + ty;
+                        float nz = raw.Z * sz + tz;
+
+                        // No swizzle (as per request), just update
+                        newPositions.Add(new SDX.Vector3(nx, ny, nz));
+                    }
+
+                    // Update Geometry
+                    geometry.Positions = newPositions;
+                    geometry.UpdateBounds();
+                }
+            }
         }
     }
 }

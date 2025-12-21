@@ -1,16 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Threading.Tasks;
-using System.IO;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ForzaTools.ForzaAnalyzer.Services;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace ForzaTools.ForzaAnalyzer.ViewModels
 {
-    // New class to hold groups of files
     public class FileGroupViewModel
     {
         public string GroupName { get; set; }
@@ -35,7 +35,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         public bool IsHomeSelected => SelectedFile == null;
         public bool IsInitialized => _fileService != null;
 
-        // CHANGED: Now a collection of Groups instead of flat files
         public ObservableCollection<FileGroupViewModel> FileGroups { get; } = new();
 
         public void Initialize(nint windowHandle)
@@ -67,6 +66,43 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             }
         }
 
+        [RelayCommand]
+        public void CreateZip() // Changed from Async to void for simple Navigation
+        {
+            // Assuming App.MainWindow has a Frame we can access via a helper or ShellPage
+            // For now, we assume the ShellPage handles navigation if we expose a request
+            // OR we can pass the Frame to the ViewModel.
+
+            // Typical WinUI 3 Navigation pattern from ShellPage:
+            var frame = (App.MainWindow.Content as FrameworkElement)?.FindName("ContentFrame") as Frame;
+            // Fallback: If your ShellPage structure differs, you might need an event.
+            // But based on your ShellPage.xaml.cs, you have a 'ContentFrame'.
+
+            // BETTER APPROACH: Add a navigation request event or use the ShellPage instance if static.
+            // Since I cannot change ShellPage instance logic easily here, 
+            // I will use a direct navigation hack or assume you wire it up in the View.
+
+            // Let's assume we can trigger navigation via the ShellPage which usually holds the MainViewModel.
+            // Actually, usually MainViewModel shouldn't know about Views.
+
+            // TEMPORARY FIX: We will trigger a property or event that ShellPage listens to?
+            // No, simplest way for this snippet:
+            // Since ShellPage has `ViewModel.OpenFilesCommand`, we can just tell ShellPage to Navigate.
+            // But the Command is in ViewModel. 
+
+            // I will add a static event to MainViewModel that ShellPage subscribes to.
+            NavigationRequested?.Invoke(typeof(Views.CreateZipPage));
+        }
+
+        // Add this to MainViewModel class
+        public event Action<Type> NavigationRequested;
+
+        [RelayCommand]
+        public async Task CreateModelBinAsync()
+        {
+            await ShowErrorDialog("Create ModelBin functionality coming soon.");
+        }
+
         public async Task ProcessPathsAsync(IEnumerable<string> paths)
         {
             IsBusy = true;
@@ -78,7 +114,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                 {
                     var results = await _fileService.ProcessFileAsync(path);
 
-                    // Create a new Group for this file/zip
                     var groupName = Path.GetFileName(path);
                     var group = new FileGroupViewModel(groupName);
 
@@ -111,7 +146,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             var dialog = new ContentDialog
             {
                 XamlRoot = App.MainWindow.Content.XamlRoot,
-                Title = "Error",
+                Title = "Notification",
                 Content = message,
                 CloseButtonText = "OK"
             };

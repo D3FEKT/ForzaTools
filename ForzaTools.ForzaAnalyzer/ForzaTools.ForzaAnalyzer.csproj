@@ -18,6 +18,8 @@
 
 	<ItemGroup>
 		<None Remove="FileDetailsPage.xaml" />
+		<None Remove="Views\CreateZipPage.xaml" />
+		<None Remove="Views\MaterialsPage.xaml" />
 		<None Remove="Views\ShellPage.xaml" />
 		<None Remove="Views\ModelViewerPage.xaml" />
 	</ItemGroup>
@@ -58,6 +60,18 @@
 
 		<PackageReference Include="HelixToolkit.WinUI" Version="2.25.0" />
 		<PackageReference Include="SharpDX.Mathematics" Version="4.2.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Page Update="Views\MaterialsPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </Page>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Page Update="Views\CreateZipPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </Page>
 	</ItemGroup>
 
 	<ItemGroup>

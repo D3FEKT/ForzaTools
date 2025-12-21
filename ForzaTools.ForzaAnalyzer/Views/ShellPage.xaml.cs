@@ -2,6 +2,7 @@ using ForzaTools.ForzaAnalyzer.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using System;
 using System.Collections.Specialized;
 using System.Linq;
 
@@ -15,11 +16,34 @@ namespace ForzaTools.ForzaAnalyzer.Views
         {
             this.InitializeComponent();
 
-            // FIX: Listen to FileGroups instead of Files
             ViewModel.FileGroups.CollectionChanged += FileGroups_CollectionChanged;
 
+            // NAVIGATION HANDLER
+            ViewModel.NavigationRequested += (pageType) =>
+            {
+                ContentFrame.Navigate(pageType);
+
+                // CRITICAL FIX: Deselect menu items so "Home" can be clicked again
+                NavView.SelectedItem = null;
+                NavView.IsBackEnabled = ContentFrame.CanGoBack;
+            };
+
             this.Loaded += ShellPage_Loaded;
+
+            // Update Back Button state whenever we navigate
+            ContentFrame.Navigated += (s, e) => NavView.IsBackEnabled = ContentFrame.CanGoBack;
+
+            // Default to Home
             NavView.SelectedItem = NavView.MenuItems[0];
+        }
+
+        // --- BACK BUTTON LOGIC ---
+        private void NavView_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
+        {
+            if (ContentFrame.CanGoBack)
+            {
+                ContentFrame.GoBack();
+            }
         }
 
         private void FileGroups_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
@@ -28,35 +52,29 @@ namespace ForzaTools.ForzaAnalyzer.Views
             {
                 foreach (FileGroupViewModel group in e.NewItems)
                 {
-                    // Create a parent Item for the Group (Folder)
                     var groupItem = new NavigationViewItem
                     {
                         Content = group.GroupName,
                         Icon = new SymbolIcon(Symbol.Folder),
-                        SelectsOnInvoked = false // Clicking folder expands it, doesn't navigate
+                        SelectsOnInvoked = false
                     };
 
-                    // Add individual files as children
                     foreach (var file in group.Files)
                     {
                         var fileItem = new NavigationViewItem
                         {
                             Content = file.FileName,
                             Icon = new SymbolIcon(Symbol.Document),
-                            Tag = file // Tag is used for navigation
+                            Tag = file
                         };
                         groupItem.MenuItems.Add(fileItem);
                     }
-
                     NavView.MenuItems.Add(groupItem);
                 }
             }
 
-            // Handle clearing the list
             if (e.Action == NotifyCollectionChangedAction.Reset)
             {
-                // Remove everything after the static items (Home, 3D View, Separator)
-                // Assuming the first 3 items are static defined in XAML
                 while (NavView.MenuItems.Count > 3)
                 {
                     NavView.MenuItems.RemoveAt(3);
@@ -75,20 +93,24 @@ namespace ForzaTools.ForzaAnalyzer.Views
             }
         }
 
-        public Visibility BooleanToVisibility(bool value) => value ? Visibility.Visible : Visibility.Collapsed;
-
         private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
         {
             if (args.IsSettingsSelected) return;
 
             if (args.SelectedItem is NavigationViewItem item)
             {
-                if (item.Tag?.ToString() == "Home")
+                string tag = item.Tag?.ToString();
+
+                if (tag == "Home")
                 {
-                    ContentFrame.Navigate(typeof(HomePage), null);
+                    ContentFrame.Navigate(typeof(HomePage));
                     if (ContentFrame.Content is HomePage home) home.ViewModel = this.ViewModel;
                 }
-                else if (item.Tag?.ToString() == "ModelView")
+                else if (tag == "Materials")
+                {
+                    ContentFrame.Navigate(typeof(MaterialsPage));
+                }
+                else if (tag == "ModelView")
                 {
                     ContentFrame.Navigate(typeof(ModelViewerPage), this.ViewModel);
                 }

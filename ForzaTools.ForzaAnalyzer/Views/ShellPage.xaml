@@ -4,31 +4,37 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:vm="using:ForzaTools.ForzaAnalyzer.ViewModels"
     mc:Ignorable="d">
 
-    <Grid>
-        <NavigationView x:Name="NavView" 
-                PaneDisplayMode="Left"
-                IsSettingsVisible="False"
-                SelectionChanged="NavView_SelectionChanged">
+    <NavigationView x:Name="NavView"
+                    PaneDisplayMode="Left"
+                    IsSettingsVisible="False"
+                    IsBackButtonVisible="Visible"
+                    SelectionChanged="NavView_SelectionChanged"
+                    BackRequested="NavView_BackRequested">
 
-            <NavigationView.MenuItems>
-                <NavigationViewItem Icon="Home" Content="Home" Tag="Home"/>
-                <NavigationViewItem Icon="View" Content="3D Model View" Tag="ModelView"/>
-                <NavigationViewItemSeparator/>
-            </NavigationView.MenuItems>
+        <NavigationView.MenuItems>
+            <NavigationViewItem Content="Home" Tag="Home">
+                <NavigationViewItem.Icon>
+                    <SymbolIcon Symbol="Home"/>
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
 
-            <Frame x:Name="ContentFrame"/>
-        </NavigationView>
+            <NavigationViewItem Content="Materials" Tag="Materials">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE896;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
 
-        <Grid Background="#80000000" 
-              Visibility="{x:Bind BooleanToVisibility(ViewModel.IsBusy), Mode=OneWay}" 
-              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Canvas.ZIndex="100">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
-                <ProgressRing IsActive="True"/>
-                <TextBlock Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}" Foreground="White"/>
-            </StackPanel>
-        </Grid>
-    </Grid>
+            <NavigationViewItemSeparator />
+
+            <NavigationViewItem Content="3D View" Tag="ModelView">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE9ca;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.MenuItems>
+
+        <Frame x:Name="ContentFrame"/>
+    </NavigationView>
 </Page>
