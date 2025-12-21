@@ -2,8 +2,11 @@
 using System;
 using System.Collections;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reflection;
 using ForzaTools.Bundles;
+using ForzaTools.Bundles.Blobs;
+using ForzaTools.Bundles.Metadata;
 using ForzaTools.CarScene;
 
 namespace ForzaTools.ForzaAnalyzer.ViewModels
@@ -42,14 +45,24 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                 int index = 0;
                 foreach (var blob in bundle.Blobs)
                 {
-                    var blobName = $"[{index}] {blob.GetType().Name.Replace("Blob", "")}";
-                    if (blob is ForzaTools.Bundles.Blobs.GenericBlob generic)
+                    // 1. Determine Blob Name
+                    string blobName = $"[{index}] {blob.GetType().Name.Replace("Blob", "")}";
+
+                    // Check for Name Metadata to append to the tree node title
+                    var nameMeta = blob.Metadatas.OfType<NameMetadata>().FirstOrDefault();
+                    if (nameMeta != null && !string.IsNullOrWhiteSpace(nameMeta.Name))
+                    {
+                        blobName += $" ({nameMeta.Name})";
+                    }
+                    else if (blob is GenericBlob generic)
+                    {
                         blobName += $" (Tag: {blob.Tag:X})";
+                    }
 
                     var blobNode = new ObjectNode(blobName, blob);
                     root.Children.Add(blobNode);
 
-                    // Add Metadata
+                    // Add Metadata Nodes
                     int metaIndex = 0;
                     foreach (var meta in blob.Metadatas)
                     {
@@ -91,8 +104,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             var props = Data.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
             foreach (var p in props)
             {
-                // Skip collections and complex types for the simple property grid
-                // They will be handled by PopulateChildrenFromProperties
                 if (p.PropertyType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(p.PropertyType)) continue;
 
                 try
@@ -110,7 +121,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             var props = obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
             foreach (var p in props)
             {
-                // Only process collections here to add them as tree nodes
                 if (p.PropertyType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(p.PropertyType))
                 {
                     var val = p.GetValue(obj) as IEnumerable;
@@ -122,10 +132,15 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                         int i = 0;
                         foreach (var item in val)
                         {
-                            // Create nodes for items inside the collection
-                            // If item is primitive, maybe don't add child? 
-                            // For now, we add everything so you can see array contents.
-                            var itemNode = new ObjectNode($"[{i}] {item?.GetType().Name ?? "Null"}", item);
+                            // 2. Custom Naming for Bones
+                            string itemTitle = $"[{i}] {item?.GetType().Name ?? "Null"}";
+
+                            if (item is Bone bone && !string.IsNullOrWhiteSpace(bone.Name))
+                            {
+                                itemTitle = $"Bone: {bone.Name}";
+                            }
+
+                            var itemNode = new ObjectNode(itemTitle, item);
                             collectionNode.Children.Add(itemNode);
                             i++;
                         }
@@ -145,8 +160,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         [ObservableProperty]
         private object _value;
 
-        // FIX: Binding to 'object' Value directly in a TextBox fails. 
-        // We use this string proxy to handle conversion.
         public string ValueAsString
         {
             get => _value?.ToString() ?? "";
@@ -162,10 +175,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                         _value = converted;
                         OnPropertyChanged(nameof(Value));
                     }
-                    catch
-                    {
-                        // Conversion failed (e.g. user typed "abc" into int field)
-                    }
+                    catch { }
                 }
             }
         }

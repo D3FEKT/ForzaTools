@@ -2,7 +2,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace ForzaTools.ModelBinEditor
+namespace ForzaTools.ForzaAnalyzer
 {
     public static class XMemCompress
     {

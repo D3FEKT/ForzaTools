@@ -7,7 +7,7 @@ using ForzaTools.Bundles.Metadata;
 using ForzaTools.Shared;
 using Syroot.BinaryData;
 
-namespace ForzaTools.ModelBinEditor
+namespace ForzaTools.ForzaAnalyzer
 {
     public static class ModelConverter
     {

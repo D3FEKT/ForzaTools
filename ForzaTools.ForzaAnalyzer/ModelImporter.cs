@@ -9,26 +9,34 @@ using ForzaTools.Bundles.Metadata;
 
 namespace ForzaTools.ForzaAnalyzer.Services
 {
-    public class ForzaGeometryData
+    public sealed class ForzaGeometryData
     {
-        public string Name { get; set; }
-        public Vector3[] Positions { get; set; }
-        public Vector3[] Normals { get; set; }
-        public Vector2[] UVs { get; set; }
-        public int[] Indices { get; set; }
-        public bool IsValid => Positions != null && Positions.Length > 0;
+        public string Name;
+        public Vector3[] Positions;
+        public Vector3[] Normals;
+        public Vector2[] UVs;
+        public int[] Indices;
     }
 
-    public class ImporterResult
+    public sealed class ImporterResult
     {
-        public List<ForzaGeometryData> Meshes { get; set; } = new();
-        public List<string> Logs { get; set; } = new();
+        public readonly List<ForzaGeometryData> Meshes = new();
+        public readonly List<string> Logs = new();
     }
 
-    public class ModelImporter
+    public sealed class ModelImporter
     {
-        private List<string> _logs = new();
-        private void Log(string msg) => _logs.Add(msg);
+        private readonly List<string> _logs = new();
+        private void Log(string s) => _logs.Add(s);
+
+        // Header size const
+        private const int MODEL_BUFFER_HEADER_SIZE = 16;
+
+        private class ElementInfo
+        {
+            public D3D12_INPUT_LAYOUT_DESC Desc;
+            public int Offset;
+        }
 
         public ImporterResult ExtractModels(Bundle bundle)
         {
@@ -36,270 +44,276 @@ namespace ForzaTools.ForzaAnalyzer.Services
             _logs.Clear();
 
             var skeleton = bundle.Blobs.OfType<SkeletonBlob>().FirstOrDefault();
-            var vertexLayouts = bundle.Blobs.OfType<VertexLayoutBlob>().ToList();
-            var indexBuffers = bundle.Blobs.OfType<IndexBufferBlob>().ToList();
-            var vertexBuffers = bundle.Blobs.OfType<VertexBufferBlob>().ToList();
-            var meshes = bundle.Blobs.OfType<MeshBlob>().ToList();
+            var vertexLayouts = bundle.Blobs.OfType<VertexLayoutBlob>().ToArray();
+            var indexBuffers = bundle.Blobs.OfType<IndexBufferBlob>().ToArray();
+            var meshes = bundle.Blobs.OfType<MeshBlob>().ToArray();
 
-            if (vertexBuffers.Count == 0 || indexBuffers.Count == 0)
+            var vertexBufferMap = new Dictionary<int, VertexBufferBlob>();
+            foreach (var vb in bundle.Blobs.OfType<VertexBufferBlob>())
             {
-                Log("Error: Missing Vertex or Index buffers.");
-                result.Logs = _logs;
-                return result;
+                var idMeta = vb.Metadatas.OfType<IdentifierMetadata>().FirstOrDefault();
+                if (idMeta != null) vertexBufferMap[(int)idMeta.Id] = vb;
             }
 
-            // 1. Compute Bone Transforms
-            Matrix4x4[] boneTransforms = null;
+            if (indexBuffers.Length == 0) return result;
+
+            var globalIndexBuffer = indexBuffers[0];
+            byte[] globalIndexData = globalIndexBuffer.GetContents();
+
+            Matrix4x4[] boneMatrices = null;
             if (skeleton != null)
             {
-                boneTransforms = new Matrix4x4[skeleton.Bones.Count];
+                boneMatrices = new Matrix4x4[skeleton.Bones.Count];
                 for (int i = 0; i < skeleton.Bones.Count; i++)
                 {
-                    var bone = skeleton.Bones[i];
-                    var mat = bone.Matrix;
-                    if (bone.ParentId >= 0 && bone.ParentId < i)
-                        mat = mat * boneTransforms[bone.ParentId];
-                    boneTransforms[i] = mat;
+                    var b = skeleton.Bones[i];
+                    var m = b.Matrix;
+                    if (b.ParentId >= 0 && b.ParentId < i) m = m * boneMatrices[b.ParentId];
+                    boneMatrices[i] = m;
                 }
             }
 
-            var indexBufferBlob = indexBuffers[0];
-            byte[] indexData = indexBufferBlob.GetContents();
-
-            int meshIndex = 0;
             foreach (var mesh in meshes)
             {
-                meshIndex++;
-                // Skip low LODs
-                if ((mesh.LODFlags & 1) == 0 && (mesh.LODFlags & 2) == 0) continue;
-
-                string meshName = "Mesh_" + meshIndex;
-                var nameMeta = mesh.Metadatas.FirstOrDefault(m => m.Tag == BundleMetadata.TAG_METADATA_Name) as NameMetadata;
-                if (nameMeta != null) meshName = nameMeta.Name;
+                // Skip low LODs logic preserved
+                if ((mesh.LODFlags & 0b1111) == 0 && !mesh.LOD_LOD0) continue;
 
                 try
                 {
-                    // --- 1. READ INDICES ---
-                    int startIdx = mesh.IndexBufferDrawOffset;
-                    int indexCount = mesh.IndexCount;
-                    var meshIndices = new List<int>(indexCount);
-                    int minIndex = int.MaxValue;
-                    int maxIndex = int.MinValue;
-                    int indexStride = mesh.Is32BitIndices ? 4 : 2;
-
-                    using (var reader = new BinaryReader(new MemoryStream(indexData)))
-                    {
-                        long idxOffset = startIdx * indexStride;
-                        if (idxOffset < indexData.Length)
-                        {
-                            reader.BaseStream.Position = idxOffset;
-                            for (int i = 0; i < indexCount; i++)
-                            {
-                                if (reader.BaseStream.Position >= reader.BaseStream.Length) break;
-                                int idx = mesh.Is32BitIndices ? reader.ReadInt32() : reader.ReadUInt16();
-                                meshIndices.Add(idx);
-                                if (idx < minIndex) minIndex = idx;
-                                if (idx > maxIndex) maxIndex = idx;
-                            }
-                        }
-                    }
-
-                    if (meshIndices.Count == 0) continue;
-
-                    int vertexCount = (maxIndex - minIndex) + 1;
-
-                    var posNum = new Vector3[vertexCount];
-                    var normNum = new Vector3[vertexCount];
-                    var uvNum = new Vector2[vertexCount];
-                    bool hasPositions = false;
-
-                    var layout = vertexLayouts[mesh.VertexLayoutIndex];
-
-                    // --- 2. READ VERTICES ---
-                    foreach (var element in layout.Elements)
-                    {
-                        var vbUsage = mesh.VertexBuffers.FirstOrDefault(v => v.InputSlot == element.InputSlot);
-
-                        int targetVbIndex = -1;
-
-                        // Strategy: Explicit Link -> Fallback to InputSlot -> Fallback to Stride Match
-                        if (vbUsage != null && vbUsage.Index >= 0 && vbUsage.Index < vertexBuffers.Count)
-                        {
-                            targetVbIndex = vbUsage.Index;
-                        }
-                        else if (element.InputSlot < vertexBuffers.Count)
-                        {
-                            targetVbIndex = (int)element.InputSlot;
-                        }
-
-                        if (targetVbIndex == -1) continue;
-
-                        var vbBlob = vertexBuffers[targetVbIndex];
-                        byte[] vbData = vbBlob.GetContents();
-
-                        // Offset/Stride Logic
-                        long bufferStart = vbUsage?.Offset ?? 0;
-                        long stride = vbUsage?.Stride ?? 0;
-
-                        // IMPROVEMENT: If stride is 0 or suspicious, try to guess or skip
-                        if (stride == 0 && targetVbIndex == 0) stride = 28; // Common position stride guess
-                        if (stride == 0) continue;
-
-                        // IMPROVEMENT: Basic Stride Check to avoid reading wrong buffers
-                        // Positions are usually 12+ bytes. UVs are 4-8 bytes.
-                        string semantic = "";
-                        if (element.SemanticNameIndex >= 0 && element.SemanticNameIndex < layout.SemanticNames.Count)
-                            semantic = layout.SemanticNames[element.SemanticNameIndex];
-
-                        if (semantic == "POSITION" && stride < 6) continue; // Unlikely to be a position buffer
-
-                        using (var reader = new BinaryReader(new MemoryStream(vbData)))
-                        {
-                            for (int i = 0; i < vertexCount; i++)
-                            {
-                                int originalVertexId = minIndex + i;
-
-                                // ADAPTIVE ADDRESSING (Try to find the valid data stream)
-                                long readAddr = -1;
-
-                                // 1. Standard (Index + BaseVertex)
-                                long addr1 = bufferStart + (originalVertexId + mesh.IndexedVertexOffset) * stride;
-                                if (element.AlignedByteOffset != -1) addr1 += element.AlignedByteOffset;
-
-                                // 2. Raw Index
-                                long addr2 = bufferStart + (originalVertexId) * stride;
-                                if (element.AlignedByteOffset != -1) addr2 += element.AlignedByteOffset;
-
-                                // 3. Local Index (0-based)
-                                long addr3 = bufferStart + (i) * stride;
-                                if (element.AlignedByteOffset != -1) addr3 += element.AlignedByteOffset;
-
-                                // Prioritize based on validity
-                                if (IsValidAddr(addr1, vbData.Length)) readAddr = addr1;
-                                else if (IsValidAddr(addr2, vbData.Length)) readAddr = addr2;
-                                else if (IsValidAddr(addr3, vbData.Length)) readAddr = addr3;
-
-                                if (readAddr == -1) continue;
-
-                                reader.BaseStream.Position = readAddr;
-                                int fmt = (int)element.Format;
-
-                                if (semantic == "POSITION")
-                                {
-                                    posNum[i] = ReadPosition(reader, fmt, mesh);
-                                    hasPositions = true;
-                                }
-                                else if (semantic == "NORMAL")
-                                    normNum[i] = ReadNormal(reader, fmt);
-                                else if (semantic == "TEXCOORD" && element.SemanticIndex == 0)
-                                    uvNum[i] = ReadUV(reader, fmt);
-                            }
-                        }
-                    }
-
-                    if (!hasPositions) continue;
-
-                    // --- 3. TRANSFORM ---
-                    bool hasTransform = boneTransforms != null && mesh.RigidBoneIndex >= 0 && mesh.RigidBoneIndex < boneTransforms.Length;
-                    var transform = hasTransform ? boneTransforms[mesh.RigidBoneIndex] : Matrix4x4.Identity;
-
-                    if (hasTransform)
-                    {
-                        for (int i = 0; i < vertexCount; i++)
-                        {
-                            posNum[i] = Vector3.Transform(posNum[i], transform);
-                            normNum[i] = Vector3.TransformNormal(normNum[i], transform);
-                        }
-                    }
-
-                    // --- 4. RE-INDEX ---
-                    var finalIndices = meshIndices.Select(idx => idx - minIndex).ToArray();
-
-                    result.Meshes.Add(new ForzaGeometryData
-                    {
-                        Name = meshName,
-                        Positions = posNum,
-                        Normals = normNum,
-                        UVs = uvNum,
-                        Indices = finalIndices
-                    });
+                    var geo = ExtractMesh(mesh, vertexLayouts, vertexBufferMap, globalIndexData, boneMatrices);
+                    if (geo != null) result.Meshes.Add(geo);
                 }
-                catch (Exception ex)
-                {
-                    Log($"Error {meshName}: {ex.Message}");
-                }
+                catch (Exception ex) { Log($"Mesh failed: {ex.Message}"); }
             }
 
-            result.Logs = _logs;
+            result.Logs.AddRange(_logs);
             return result;
         }
 
-        private bool IsValidAddr(long addr, long len) => addr >= 0 && addr + 16 <= len;
-
-        private Vector3 ReadPosition(BinaryReader br, int format, MeshBlob mesh)
+        private ForzaGeometryData ExtractMesh(
+            MeshBlob mesh,
+            VertexLayoutBlob[] layouts,
+            Dictionary<int, VertexBufferBlob> vbMap,
+            byte[] globalIndexData,
+            Matrix4x4[] boneMatrices)
         {
-            try
-            {
-                float x = 0, y = 0, z = 0;
-                // SNORM16
-                if (format == 13)
-                {
-                    x = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
-                    y = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
-                    z = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
-                    br.ReadInt16(); // Skip W
+            var layout = layouts[mesh.VertexLayoutIndex];
+            string name = mesh.Metadatas.OfType<NameMetadata>().FirstOrDefault()?.Name ?? "Mesh";
 
-                    if (mesh.PositionScale != Vector4.Zero)
+            int indexStride = mesh.Is32BitIndices ? 4 : 2;
+            int indexCount = mesh.IndexCount;
+            long startIndexOffset = MODEL_BUFFER_HEADER_SIZE + ((long)mesh.IndexBufferDrawOffset * indexStride);
+
+            var indices = new int[indexCount];
+            int minIndex = int.MaxValue;
+            int maxIndex = int.MinValue;
+
+            using (var ms = new MemoryStream(globalIndexData))
+            using (var br = new BinaryReader(ms))
+            {
+                ms.Position = startIndexOffset;
+                for (int i = 0; i < indexCount; i++)
+                {
+                    int idx = (indexStride == 4) ? br.ReadInt32() : br.ReadUInt16();
+                    indices[i] = idx;
+                    if (idx < minIndex) minIndex = idx;
+                    if (idx > maxIndex) maxIndex = idx;
+                }
+            }
+
+            int vertexCount = (maxIndex - minIndex) + 1;
+            var posW = new Vector4[vertexCount];
+            var normals = new Vector3[vertexCount];
+            var uvs = new Vector2[vertexCount];
+
+            var elementsToRead = new List<ElementInfo>();
+            var slotOffsets = new Dictionary<int, int>();
+
+            foreach (var element in layout.Elements)
+            {
+                int slot = element.InputSlot;
+                if (!slotOffsets.ContainsKey(slot)) slotOffsets[slot] = 0;
+                elementsToRead.Add(new ElementInfo { Desc = element, Offset = slotOffsets[slot] });
+                slotOffsets[slot] += GetFormatSize((int)element.Format);
+            }
+
+            // PASS 1: Position
+            foreach (var item in elementsToRead)
+            {
+                if (GetSemanticName(layout, item.Desc) != "POSITION") continue;
+                ReadBuffer(mesh, vbMap, item.Desc, item.Offset, minIndex, vertexCount, (br, i) =>
+                {
+                    posW[i] = ReadPosition(br, (int)item.Desc.Format, mesh);
+                });
+            }
+
+            // PASS 2: Normals/UV
+            foreach (var item in elementsToRead)
+            {
+                string semantic = GetSemanticName(layout, item.Desc);
+                if (semantic == "POSITION") continue;
+
+                ReadBuffer(mesh, vbMap, item.Desc, item.Offset, minIndex, vertexCount, (br, i) =>
+                {
+                    if (semantic == "NORMAL")
+                        normals[i] = ReadNormal(br, (int)item.Desc.Format, posW[i].W);
+                    else if (semantic == "TEXCOORD" && item.Desc.SemanticIndex == 0)
+                        uvs[i] = ReadUV(br, (int)item.Desc.Format);
+                });
+            }
+
+            // TRANSFORM
+            var finalPos = new Vector3[vertexCount];
+            var finalIndices = new int[indices.Length];
+
+            bool hasBone = boneMatrices != null && mesh.RigidBoneIndex >= 0 && mesh.RigidBoneIndex < boneMatrices.Length;
+            var transform = hasBone ? boneMatrices[mesh.RigidBoneIndex] : Matrix4x4.Identity;
+
+            for (int i = 0; i < vertexCount; i++)
+            {
+                var p = new Vector3(posW[i].X, posW[i].Y, posW[i].Z);
+                var n = normals[i];
+
+                if (hasBone)
+                {
+                    p = Vector3.Transform(p, transform);
+                    n = Vector3.TransformNormal(n, transform);
+                }
+
+                // REMOVED SWIZZLE: Keeping Original Coordinates (likely Y-Up)
+                finalPos[i] = p;
+                normals[i] = n;
+            }
+
+            // REMOVED WINDING FLIP: Because we didn't mirror the geometry, we don't swap indices.
+            for (int i = 0; i < indices.Length; i++)
+            {
+                finalIndices[i] = indices[i] - minIndex;
+            }
+
+            return new ForzaGeometryData
+            {
+                Name = name,
+                Positions = finalPos,
+                Normals = normals,
+                UVs = uvs,
+                Indices = finalIndices
+            };
+        }
+
+        private void ReadBuffer(
+            MeshBlob mesh,
+            Dictionary<int, VertexBufferBlob> vbMap,
+            D3D12_INPUT_LAYOUT_DESC element,
+            int offsetInStride,
+            int minIndex,
+            int count,
+            Action<BinaryReader, int> readAction)
+        {
+            var usage = mesh.VertexBuffers.FirstOrDefault(v => v.InputSlot == element.InputSlot);
+            if (usage == null || !vbMap.TryGetValue(usage.Index, out var vb)) return;
+
+            byte[] data = Flatten(vb);
+            long stride = vb.Header?.Stride ?? usage.Stride;
+            if (stride == 0) stride = 28;
+
+            using (var ms = new MemoryStream(data))
+            using (var br = new BinaryReader(ms))
+            {
+                long usageOffset = usage.Offset;
+                for (int i = 0; i < count; i++)
+                {
+                    long vertexId = minIndex + i + mesh.IndexedVertexOffset;
+                    long addr = usageOffset + (vertexId * stride) + offsetInStride;
+
+                    if (addr >= 0 && addr + 4 <= data.Length)
                     {
-                        x = x * mesh.PositionScale.X + mesh.PositionTranslate.X;
-                        y = y * mesh.PositionScale.Y + mesh.PositionTranslate.Y;
-                        z = z * mesh.PositionScale.Z + mesh.PositionTranslate.Z;
+                        ms.Position = addr;
+                        readAction(br, i);
                     }
                 }
-                // FLOAT32
-                else if (format == 6) { x = br.ReadSingle(); y = br.ReadSingle(); z = br.ReadSingle(); }
-
-                // FLIP Z for Helix Viewport
-                return new Vector3(x, y, z);
             }
-            catch { return Vector3.Zero; }
         }
 
-        private Vector3 ReadNormal(BinaryReader br, int format)
+        private byte[] Flatten(VertexBufferBlob vb)
         {
-            try
-            {
-                // R16G16B16A16_FLOAT (Half) - Placeholder read
-                if (format == 10) { br.ReadUInt64(); return Vector3.UnitY; }
-                // R10G10B10A2_UNORM - Common normal format, usually requires bit manipulation
-                if (format == 24) { br.ReadUInt32(); return Vector3.UnitY; }
-
-                return Vector3.UnitY;
-            }
-            catch { return Vector3.UnitY; }
+            if (vb.Header?.Data != null) return vb.Header.Data.SelectMany(x => x).ToArray();
+            return Array.Empty<byte>();
         }
 
-        private Vector2 ReadUV(BinaryReader br, int format)
+        private string GetSemanticName(VertexLayoutBlob layout, D3D12_INPUT_LAYOUT_DESC element)
         {
-            try
+            if (element.SemanticNameIndex >= 0 && element.SemanticNameIndex < layout.SemanticNames.Count)
+                return layout.SemanticNames[element.SemanticNameIndex];
+            return "UNKNOWN";
+        }
+
+        private int GetFormatSize(int fmt) => fmt switch
+        {
+            6 => 12,
+            10 => 8,
+            13 => 8,
+            16 => 8,
+            24 => 4,
+            28 => 4,
+            35 => 4,
+            37 => 4,
+            _ => 4
+        };
+
+        private static Vector4 ReadPosition(BinaryReader br, int format, MeshBlob mesh)
+        {
+            if (format == 13)
             {
-                // R16G16_UNORM
-                if (format == 35)
+                float x = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                float y = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                float z = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                float w = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                if (mesh.PositionScale != Vector4.Zero)
                 {
-                    float u = br.ReadUInt16() / 65535f;
-                    float v = br.ReadUInt16() / 65535f;
-                    return new Vector2(u, 1.0f - v);
+                    x = x * mesh.PositionScale.X + mesh.PositionTranslate.X;
+                    y = y * mesh.PositionScale.Y + mesh.PositionTranslate.Y;
+                    z = z * mesh.PositionScale.Z + mesh.PositionTranslate.Z;
                 }
-                // R32G32_FLOAT
-                if (format == 16)
-                {
-                    float u = br.ReadSingle();
-                    float v = br.ReadSingle();
-                    return new Vector2(u, 1.0f - v);
-                }
-                return Vector2.Zero;
+                return new Vector4(x, y, z, w);
             }
-            catch { return Vector2.Zero; }
+            if (format == 6) return new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), 1f);
+            return Vector4.Zero;
+        }
+
+        private static Vector3 ReadNormal(BinaryReader br, int format, float wFromPos)
+        {
+            if (format == 37)
+            {
+                float nx = wFromPos;
+                float ny = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                float nz = Math.Clamp(br.ReadInt16() / 32767f, -1f, 1f);
+                return Vector3.Normalize(new Vector3(nx, ny, nz));
+            }
+            if (format == 10)
+            {
+                float nx = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16());
+                float ny = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16());
+                float nz = (float)BitConverter.UInt16BitsToHalf(br.ReadUInt16());
+                br.ReadUInt16();
+                return Vector3.Normalize(new Vector3(nx, ny, nz));
+            }
+            if (format == 24)
+            {
+                uint v = br.ReadUInt32();
+                float nx = ((v >> 0) & 0x3FF) / 1023f * 2f - 1f;
+                float ny = ((v >> 10) & 0x3FF) / 1023f * 2f - 1f;
+                float nz = ((v >> 20) & 0x3FF) / 1023f * 2f - 1f;
+                return Vector3.Normalize(new Vector3(nx, ny, nz));
+            }
+            return Vector3.UnitY;
+        }
+
+        private static Vector2 ReadUV(BinaryReader br, int format)
+        {
+            if (format == 35) return new Vector2(br.ReadUInt16() / 65535f, 1f - (br.ReadUInt16() / 65535f));
+            if (format == 16) return new Vector2(br.ReadSingle(), 1f - br.ReadSingle());
+            return Vector2.Zero;
         }
     }
 }

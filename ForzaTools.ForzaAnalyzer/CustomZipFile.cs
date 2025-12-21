@@ -5,7 +5,7 @@ using System.IO.Compression;
 using System.Text;
 using Syroot.BinaryData;
 
-namespace ForzaTools.ModelBinEditor
+namespace ForzaTools.ForzaAnalyzer
 {
     public class CustomZipFile : IDisposable
     {

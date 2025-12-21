@@ -14,28 +14,49 @@ namespace ForzaTools.ForzaAnalyzer.Views
         public ShellPage()
         {
             this.InitializeComponent();
-            ViewModel.Files.CollectionChanged += Files_CollectionChanged;
+
+            // FIX: Listen to FileGroups instead of Files
+            ViewModel.FileGroups.CollectionChanged += FileGroups_CollectionChanged;
+
             this.Loaded += ShellPage_Loaded;
             NavView.SelectedItem = NavView.MenuItems[0];
         }
 
-        private void Files_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+        private void FileGroups_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
             if (e.NewItems != null)
             {
-                foreach (FileViewModel newItem in e.NewItems)
+                foreach (FileGroupViewModel group in e.NewItems)
                 {
-                    var navItem = new NavigationViewItem
+                    // Create a parent Item for the Group (Folder)
+                    var groupItem = new NavigationViewItem
                     {
-                        Content = newItem.FileName,
-                        Icon = new SymbolIcon(Symbol.Document),
-                        Tag = newItem
+                        Content = group.GroupName,
+                        Icon = new SymbolIcon(Symbol.Folder),
+                        SelectsOnInvoked = false // Clicking folder expands it, doesn't navigate
                     };
-                    NavView.MenuItems.Add(navItem);
+
+                    // Add individual files as children
+                    foreach (var file in group.Files)
+                    {
+                        var fileItem = new NavigationViewItem
+                        {
+                            Content = file.FileName,
+                            Icon = new SymbolIcon(Symbol.Document),
+                            Tag = file // Tag is used for navigation
+                        };
+                        groupItem.MenuItems.Add(fileItem);
+                    }
+
+                    NavView.MenuItems.Add(groupItem);
                 }
             }
+
+            // Handle clearing the list
             if (e.Action == NotifyCollectionChangedAction.Reset)
             {
+                // Remove everything after the static items (Home, 3D View, Separator)
+                // Assuming the first 3 items are static defined in XAML
                 while (NavView.MenuItems.Count > 3)
                 {
                     NavView.MenuItems.RemoveAt(3);
@@ -69,7 +90,6 @@ namespace ForzaTools.ForzaAnalyzer.Views
                 }
                 else if (item.Tag?.ToString() == "ModelView")
                 {
-                    // FIX: Pass the entire MainViewModel so the 3D page can see the file list
                     ContentFrame.Navigate(typeof(ModelViewerPage), this.ViewModel);
                 }
                 else if (item.Tag is FileViewModel fileVm)

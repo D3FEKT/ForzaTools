@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ForzaTools.ForzaAnalyzer.Services;
@@ -9,6 +10,14 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace ForzaTools.ForzaAnalyzer.ViewModels
 {
+    // New class to hold groups of files
+    public class FileGroupViewModel
+    {
+        public string GroupName { get; set; }
+        public ObservableCollection<FileViewModel> Files { get; } = new();
+        public FileGroupViewModel(string name) { GroupName = name; }
+    }
+
     public partial class MainViewModel : ObservableObject
     {
         private FileService _fileService;
@@ -26,7 +35,8 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         public bool IsHomeSelected => SelectedFile == null;
         public bool IsInitialized => _fileService != null;
 
-        public ObservableCollection<FileViewModel> Files { get; } = new();
+        // CHANGED: Now a collection of Groups instead of flat files
+        public ObservableCollection<FileGroupViewModel> FileGroups { get; } = new();
 
         public void Initialize(nint windowHandle)
         {
@@ -67,9 +77,19 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                 foreach (var path in paths)
                 {
                     var results = await _fileService.ProcessFileAsync(path);
+
+                    // Create a new Group for this file/zip
+                    var groupName = Path.GetFileName(path);
+                    var group = new FileGroupViewModel(groupName);
+
                     foreach (var item in results)
                     {
-                        Files.Add(new FileViewModel(item.FileName, item.ParsedData));
+                        group.Files.Add(new FileViewModel(item.FileName, item.ParsedData));
+                    }
+
+                    if (group.Files.Count > 0)
+                    {
+                        FileGroups.Add(group);
                     }
                 }
             }

@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using ForzaTools.Bundles;   // For the 'Bundle' class
 using ForzaTools.CarScene;  // For the 'CarbinFile' class
-using ForzaTools.ModelBinEditor;
 
 namespace ForzaTools.ForzaAnalyzer.Services
 {
