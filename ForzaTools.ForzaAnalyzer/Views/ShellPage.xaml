@@ -7,21 +7,15 @@
     xmlns:vm="using:ForzaTools.ForzaAnalyzer.ViewModels"
     mc:Ignorable="d">
 
-    <Page.Resources>
-        <DataTemplate x:Key="FileItemTemplate" x:DataType="vm:FileViewModel">
-            <NavigationViewItem Content="{x:Bind FileName}" Icon="Document" Tag="{x:Bind}"/>
-        </DataTemplate>
-    </Page.Resources>
-
     <Grid>
         <NavigationView x:Name="NavView" 
                 PaneDisplayMode="Left"
                 IsSettingsVisible="False"
-                SelectionChanged="NavView_SelectionChanged"
-                MenuItemTemplate="{StaticResource FileItemTemplate}"
-                MenuItemsSource="{x:Bind ViewModel.Files, Mode=OneWay}">
+                SelectionChanged="NavView_SelectionChanged">
+
             <NavigationView.MenuItems>
                 <NavigationViewItem Icon="Home" Content="Home" Tag="Home"/>
+                <NavigationViewItem Icon="View" Content="3D Model View" Tag="ModelView"/>
                 <NavigationViewItemSeparator/>
             </NavigationView.MenuItems>
 

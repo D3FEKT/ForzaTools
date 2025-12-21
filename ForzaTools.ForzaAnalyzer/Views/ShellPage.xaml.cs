@@ -2,52 +2,81 @@ using ForzaTools.ForzaAnalyzer.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using System.Collections.Specialized;
+using System.Linq;
 
 namespace ForzaTools.ForzaAnalyzer.Views
 {
     public sealed partial class ShellPage : Page
     {
-        // ERROR FIX: This property must be 'public' for x:Bind to see it
         public MainViewModel ViewModel { get; } = new MainViewModel();
 
         public ShellPage()
         {
             this.InitializeComponent();
+            ViewModel.Files.CollectionChanged += Files_CollectionChanged;
+            this.Loaded += ShellPage_Loaded;
+            NavView.SelectedItem = NavView.MenuItems[0];
+        }
 
-            // Setup the ViewModel with the Window Handle
+        private void Files_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.NewItems != null)
+            {
+                foreach (FileViewModel newItem in e.NewItems)
+                {
+                    var navItem = new NavigationViewItem
+                    {
+                        Content = newItem.FileName,
+                        Icon = new SymbolIcon(Symbol.Document),
+                        Tag = newItem
+                    };
+                    NavView.MenuItems.Add(navItem);
+                }
+            }
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+            {
+                while (NavView.MenuItems.Count > 3)
+                {
+                    NavView.MenuItems.RemoveAt(3);
+                }
+            }
+        }
+
+        private void ShellPage_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel.IsInitialized) return;
             var window = App.MainWindow;
             if (window != null)
             {
                 var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(window);
                 ViewModel.Initialize(windowHandle);
             }
-
-            // Select "Home" by default
-            NavView.SelectedItem = NavView.MenuItems[0];
         }
 
-        // ERROR FIX: This method must exist for the Visibility binding to work
-        public Visibility BooleanToVisibility(bool value)
-        {
-            return value ? Visibility.Visible : Visibility.Collapsed;
-        }
+        public Visibility BooleanToVisibility(bool value) => value ? Visibility.Visible : Visibility.Collapsed;
 
         private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
         {
             if (args.IsSettingsSelected) return;
 
-            if (args.SelectedItem is NavigationViewItem item && item.Tag?.ToString() == "Home")
+            if (args.SelectedItem is NavigationViewItem item)
             {
-                ContentFrame.Navigate(typeof(HomePage), null);
-                if (ContentFrame.Content is HomePage home)
+                if (item.Tag?.ToString() == "Home")
                 {
-                    home.ViewModel = this.ViewModel;
+                    ContentFrame.Navigate(typeof(HomePage), null);
+                    if (ContentFrame.Content is HomePage home) home.ViewModel = this.ViewModel;
                 }
-            }
-            else if (args.SelectedItem is FileViewModel fileVm)
-            {
-                ContentFrame.Navigate(typeof(FileDetailsPage), fileVm);
-                ViewModel.SelectedFile = fileVm;
+                else if (item.Tag?.ToString() == "ModelView")
+                {
+                    // FIX: Pass the entire MainViewModel so the 3D page can see the file list
+                    ContentFrame.Navigate(typeof(ModelViewerPage), this.ViewModel);
+                }
+                else if (item.Tag is FileViewModel fileVm)
+                {
+                    ContentFrame.Navigate(typeof(FileDetailsPage), fileVm);
+                    ViewModel.SelectedFile = fileVm;
+                }
             }
         }
     }

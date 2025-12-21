@@ -24,6 +24,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         private FileViewModel _selectedFile;
 
         public bool IsHomeSelected => SelectedFile == null;
+        public bool IsInitialized => _fileService != null;
 
         public ObservableCollection<FileViewModel> Files { get; } = new();
 
@@ -36,6 +37,12 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         [RelayCommand]
         public async Task OpenFilesAsync()
         {
+            if (_fileService == null)
+            {
+                await ShowErrorDialog("Service not initialized. Please restart the app.");
+                return;
+            }
+
             try
             {
                 var paths = await _fileService.PickFilesAsync();
@@ -79,6 +86,8 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
         private async Task ShowErrorDialog(string message)
         {
+            if (App.MainWindow?.Content?.XamlRoot == null) return;
+
             var dialog = new ContentDialog
             {
                 XamlRoot = App.MainWindow.Content.XamlRoot,

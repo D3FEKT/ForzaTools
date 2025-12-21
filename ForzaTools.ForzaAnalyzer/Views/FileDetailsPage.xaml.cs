@@ -18,5 +18,13 @@ namespace ForzaTools.ForzaAnalyzer.Views
             base.OnNavigatedTo(e);
             ViewModel = e.Parameter as FileViewModel;
         }
+
+        private void TreeView_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
+        {
+            if (args.InvokedItem is ObjectNode node)
+            {
+                ViewModel.SelectedNode = node;
+            }
+        }
     }
 }
