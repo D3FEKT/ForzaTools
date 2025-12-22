@@ -76,4 +76,31 @@ public class ModelBlob : BundleBlob
             bs.WriteByte(0); // Padding
         }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        bs.WriteUInt16(MeshCount);
+        bs.WriteUInt16(BuffersCount);
+        bs.WriteUInt16(VertexLayoutCount);
+        bs.WriteUInt16(MaterialCount);
+
+        bs.WriteByte((byte)(HasLOD ? 1 : 0));
+        bs.WriteSByte(MinLOD);
+        bs.WriteSByte(MaxLOD);
+        bs.WriteByte(0); // Padding
+
+        bs.WriteUInt16(LODFlags);
+
+        if (IsAtLeastVersion(1, 2))
+        {
+            bs.WriteByte(DecompressFlags);
+            bs.WriteByte(0); // Padding
+        }
+
+        if (IsAtLeastVersion(1, 3))
+        {
+            bs.WriteByte(UnkV1_3);
+            bs.WriteByte(0); // Padding
+        }
+    }
 }

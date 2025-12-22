@@ -74,4 +74,32 @@ public class BufferHeader
         for (int i = 0; i < Data.Length; i++)
             bs.WriteBytes(Data[i]);
     }
+
+    public void CreateModelBin(BinaryStream bs, byte versionMajor, byte versionMinor)
+    {
+        // Safe access to Data
+        int count = Data?.Length ?? 0;
+        bs.WriteInt32(count);
+        bs.WriteInt32(count * Stride);
+        bs.WriteUInt16(Stride);
+
+        bool isV1 = versionMajor > 1 || (versionMajor == 1 && versionMinor >= 0);
+
+        if (isV1)
+        {
+            bs.WriteByte(NumElements);
+            bs.WriteByte(0); // Padding
+            bs.WriteInt32((int)Format);
+        }
+        else
+        {
+            bs.WriteBytes(new byte[2]);
+        }
+
+        if (Data != null)
+        {
+            for (int i = 0; i < Data.Length; i++)
+                bs.WriteBytes(Data[i] ?? new byte[Stride]); // Safety check for null inner arrays
+        }
+    }
 }

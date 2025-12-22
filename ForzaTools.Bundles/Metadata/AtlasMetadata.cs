@@ -24,4 +24,13 @@ public class AtlasMetadata : BundleMetadata
         if (Version >= 2)
             bs.WriteBoolean(UnkV2);
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        if (Version >= 1)
+            bs.WriteBoolean(Unk);
+
+        if (Version >= 2)
+            bs.WriteBoolean(UnkV2);
+    }
 }

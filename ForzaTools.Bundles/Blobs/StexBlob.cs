@@ -17,4 +17,20 @@ public class STexBlob : BundleBlob
         if (TextureBundle != null)
             TextureBundle.Serialize(bs);
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        if (TextureBundle != null)
+        {
+            TextureBundle.CreateModelBin(bs.BaseStream);
+        }
+        else
+        {
+            // Empty bundle fallback
+            var empty = new Bundle();
+            empty.VersionMajor = this.VersionMajor;
+            empty.VersionMinor = this.VersionMinor;
+            empty.CreateModelBin(bs.BaseStream);
+        }
+    }
 }

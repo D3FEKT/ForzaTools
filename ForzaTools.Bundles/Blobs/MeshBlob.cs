@@ -186,4 +186,84 @@ public class MeshBlob : BundleBlob
         if (IsAtLeastVersion(1, 5)) bs.Write(MemoryMarshal.Cast<Vector4, byte>(TexCoordTransforms));
         if (IsAtLeastVersion(1, 8)) { bs.WriteVector4(PositionScale); bs.WriteVector4(PositionTranslate); }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        if (IsAtLeastVersion(1, 9))
+        {
+            // Ensure array exists and has 4 elements, else fill with -1 or 0
+            short[] safeIds = new short[4];
+            if (MaterialIds != null)
+                Array.Copy(MaterialIds, safeIds, Math.Min(MaterialIds.Length, 4));
+            bs.WriteInt16s(safeIds);
+        }
+        else
+        {
+            bs.WriteInt16(MaterialId);
+        }
+
+        bs.WriteInt16(RigidBoneIndex);
+        bs.WriteUInt16(LODFlags);
+        bs.WriteByte(LODLevel1);
+        bs.WriteByte(LODLevel2);
+
+        ushort bucketFlagsRaw = 0;
+        if (IsOpaque) bucketFlagsRaw |= 1;
+        if (IsDecal) bucketFlagsRaw |= 2;
+        if (IsTransparent) bucketFlagsRaw |= 4;
+        if (IsShadow) bucketFlagsRaw |= 8;
+        if (IsNotShadow) bucketFlagsRaw |= 16;
+        if (IsAlphaToCoverage) bucketFlagsRaw |= 32;
+        bs.WriteUInt16(bucketFlagsRaw);
+
+        bs.WriteByte(BucketOrder);
+
+        if (IsAtLeastVersion(1, 2)) { bs.WriteByte(SkinningElementsCount); bs.WriteByte(MorphWeightsCount); }
+        if (IsAtLeastVersion(1, 3)) bs.WriteBoolean(IsMorphDamage);
+
+        bs.WriteBoolean(Is32BitIndices);
+        bs.WriteUInt16(Topology);
+        bs.WriteInt32(IndexBufferIndex);
+        bs.WriteInt32(IndexBufferOffset);
+        bs.WriteInt32(IndexBufferDrawOffset);
+        bs.WriteInt32(IndexedVertexOffset);
+        bs.WriteInt32(IndexCount);
+        bs.WriteInt32(PrimCount);
+
+        if (IsAtLeastVersion(1, 6)) { bs.WriteSingle(ACMR); bs.WriteUInt32(ReferencedVertexCount); }
+
+        bs.WriteInt32(VertexLayoutIndex);
+
+        var safeVBs = VertexBuffers ?? new List<VertexBufferUsage>();
+        bs.WriteInt32(safeVBs.Count);
+        foreach (var vb in safeVBs)
+        {
+            bs.WriteInt32(vb.Index);
+            bs.WriteUInt32(vb.InputSlot);
+            bs.WriteUInt32(vb.Stride);
+            bs.WriteUInt32(vb.Offset);
+        }
+
+        if (IsAtLeastVersion(1, 4)) { bs.WriteInt32(MorphDataBufferIndex); bs.WriteInt32(SkinningDataBufferIndex); }
+
+        var safeCBs = ConstantBufferIndices ?? Array.Empty<int>();
+        bs.WriteInt32(safeCBs.Length);
+        bs.WriteInt32s(safeCBs);
+
+        if (IsAtLeastVersion(1, 1)) bs.WriteUInt32(SourceMeshIndex);
+
+        if (IsAtLeastVersion(1, 5))
+        {
+            // Write 5 Vector4s. If array is missing/short, write zeros.
+            for (int i = 0; i < 5; i++)
+            {
+                if (TexCoordTransforms != null && i < TexCoordTransforms.Length)
+                    bs.WriteVector4(TexCoordTransforms[i]);
+                else
+                    bs.WriteVector4(Vector4.Zero);
+            }
+        }
+
+        if (IsAtLeastVersion(1, 8)) { bs.WriteVector4(PositionScale); bs.WriteVector4(PositionTranslate); }
+    }
 }

@@ -1,0 +1,42 @@
+<Page
+    x:Class="ForzaTools.ForzaAnalyzer.Views.CreateModelBinPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:viewmodels="using:ForzaTools.ForzaAnalyzer.ViewModels"
+    mc:Ignorable="d">
+
+    <Page.DataContext>
+        <viewmodels:CreateModelBinViewModel />
+    </Page.DataContext>
+
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <StackPanel Spacing="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+            <TextBlock Text="Create Test ModelBin" 
+                       Style="{StaticResource TitleTextBlockStyle}" 
+                       HorizontalAlignment="Center"/>
+
+            <TextBlock Text="Generates a hardcoded 3D Cube compatible with FH4/FH5." 
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       HorizontalAlignment="Center"/>
+
+            <TextBox Header="Output Filename" 
+                     Text="{Binding FileName, Mode=TwoWay}" 
+                     Width="300" />
+
+            <Button Content="Generate Cube" 
+                    Command="{Binding CreateCubeCommand}" 
+                    Style="{StaticResource AccentButtonStyle}"
+                    HorizontalAlignment="Stretch"
+                    Height="40"/>
+
+            <InfoBar Title="Status" 
+                     Message="{Binding StatusMessage}" 
+                     IsOpen="True" 
+                     IsClosable="False"
+                     Width="300"/>
+        </StackPanel>
+    </Grid>
+</Page>

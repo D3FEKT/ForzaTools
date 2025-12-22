@@ -27,4 +27,13 @@ public class TextureReferencesMetadata : BundleMetadata
             bs.WriteUInt32(hash);
         }
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        var safeHashes = TexturePathHashes ?? new List<uint>();
+        foreach (var hash in safeHashes)
+        {
+            bs.WriteUInt32(hash);
+        }
+    }
 }

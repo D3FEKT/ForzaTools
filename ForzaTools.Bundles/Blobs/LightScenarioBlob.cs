@@ -126,6 +126,11 @@ public class LightScenarioBlob : BundleBlob
                 bs.WriteString(ls.PathV1_5 ?? "", StringCoding.VariableByteCount);
         }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        //not needed for modelbin
+    }
 }
 
 public class LightScenario

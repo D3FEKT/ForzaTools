@@ -14,26 +14,15 @@
                     BackRequested="NavView_BackRequested">
 
         <NavigationView.MenuItems>
-            <NavigationViewItem Content="Home" Tag="Home">
-                <NavigationViewItem.Icon>
-                    <SymbolIcon Symbol="Home"/>
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-
-            <NavigationViewItem Content="Materials" Tag="Materials">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE896;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
+            <NavigationViewItem Icon="Home" Content="Home" Tag="Home" />
+            <NavigationViewItem Icon="Library" Content="Material Browser" Tag="Materials" />
+            <NavigationViewItem Icon="View" Content="Model Viewer" Tag="ModelView" />
+            <NavigationViewItem Icon="Add" Content="Modelbin Creator" Tag="CreateModelBinPage" />
 
             <NavigationViewItemSeparator />
-
-            <NavigationViewItem Content="3D View" Tag="ModelView">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE9ca;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
         </NavigationView.MenuItems>
+
+
 
         <Frame x:Name="ContentFrame"/>
     </NavigationView>

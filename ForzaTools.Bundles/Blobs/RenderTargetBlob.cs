@@ -28,4 +28,14 @@ public class RenderTargetBlob : BundleBlob
         if (UnkLength > 0)
             bs.WriteBytes(new byte[UnkLength]);
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        if (IsAtLeastVersion(1, 1))
+            bs.WriteBoolean(IsInline);
+
+        bs.WriteByte(UnkLength);
+        if (UnkLength > 0)
+            bs.WriteBytes(new byte[UnkLength]); // Padding/Data
+    }
 }

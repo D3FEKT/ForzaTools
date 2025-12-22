@@ -136,6 +136,42 @@ public abstract class BundleBlob
         bs.Position = lastDataPos;
     }
 
+    public void CreateModelBinMetadatas(BinaryStream bs)
+    {
+        long headersStartOffset = bs.Position;
+        long lastDataPos = bs.Position + (BundleMetadata.InfoSize * Metadatas.Count);
+
+        for (int j = 0; j < Metadatas.Count; j++)
+        {
+            bs.Position = lastDataPos;
+
+            long headerOffset = headersStartOffset + (BundleMetadata.InfoSize * j);
+            long dataStartOffset = lastDataPos;
+
+            BundleMetadata metadata = Metadatas[j];
+            metadata.CreateModelBinMetadataData(bs);
+
+            ulong relativeOffset = (ulong)(lastDataPos - headerOffset);
+            lastDataPos = bs.Position;
+
+            // Write Header
+            bs.Position = headerOffset;
+            bs.WriteUInt32(metadata.Tag);
+
+            ulong metadataSize = (ulong)(lastDataPos - dataStartOffset);
+            // Flags: Size (12 bits) | Version (4 bits)
+            ushort flags = (ushort)(metadataSize << 4 | (ushort)(metadata.Version & 0b1111));
+            bs.WriteUInt16(flags);
+
+            bs.WriteUInt16((ushort)relativeOffset);
+        }
+
+        bs.Position = lastDataPos;
+    }
+
+    // Abstract method to be implemented by all blobs
+    public abstract void CreateModelBinBlobData(BinaryStream bs);
+
     public byte[] GetContents() => _data;
 
     public bool IsAtMostVersion(byte versionMajor, byte versionMinor)

@@ -27,4 +27,13 @@ public class BlendMetadata : BundleMetadata
             bs.WriteBoolean(Unk2);
         }
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        if (Version == 1)
+        {
+            bs.WriteBoolean(Unk1);
+            bs.WriteBoolean(Unk2);
+        }
+    }
 }

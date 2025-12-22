@@ -56,6 +56,30 @@ public class SkeletonBlob : BundleBlob
             }
         }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        var safeBones = Bones ?? new List<Bone>();
+        bs.WriteUInt16((ushort)safeBones.Count);
+
+        foreach (var bone in safeBones)
+        {
+            bs.WriteString(bone.Name ?? "", StringCoding.Int32CharCount);
+            bs.WriteInt16(bone.ParentId);
+            bs.WriteInt16(bone.FirstChildIndex);
+            bs.WriteInt16(bone.NextIndex);
+            bs.WriteMatrix4x4(bone.Matrix);
+        }
+
+        if (IsAtLeastVersion(1, 0))
+        {
+            bs.WriteUInt32((uint)(UnkV1_0?.Length ?? 0));
+            if (UnkV1_0 != null && UnkV1_0.Length > 0)
+            {
+                bs.WriteBytes(UnkV1_0);
+            }
+        }
+    }
 }
 
 public class Bone

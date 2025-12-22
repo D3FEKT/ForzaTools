@@ -98,9 +98,9 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         public event Action<Type> NavigationRequested;
 
         [RelayCommand]
-        public async Task CreateModelBinAsync()
+        public void CreateModelBin() // Changed to void/synchronous trigger for navigation
         {
-            await ShowErrorDialog("Create ModelBin functionality coming soon.");
+            NavigationRequested?.Invoke(typeof(Views.CreateModelBinPage));
         }
 
         public async Task ProcessPathsAsync(IEnumerable<string> paths)

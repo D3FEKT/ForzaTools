@@ -191,6 +191,109 @@ public class Bundle
         bs.Position = baseBundleOffset + totalSize;
     }
 
+    public void CreateModelBin(Stream stream)
+    {
+        long baseBundleOffset = stream.Position;
+        var bs = new BinaryStream(stream);
+
+        // Write Header
+        bs.WriteUInt32(BundleTag);
+        bs.WriteByte(VersionMajor);
+        bs.WriteByte(VersionMinor);
+
+        // Header Logic based on Version
+        if (VersionMajor > 1 || (VersionMajor == 1 && VersionMinor >= 1))
+        {
+            bs.WriteInt16(0); // Padding
+            bs.WriteUInt32(0); // Header Size placeholder
+            bs.WriteUInt32(0); // Total Size placeholder
+            bs.WriteUInt32((uint)Blobs.Count);
+        }
+        else
+        {
+            bs.WriteUInt16((ushort)Blobs.Count);
+            bs.WriteUInt32(0);
+            bs.WriteUInt32(0);
+        }
+
+        long blobHeadersStart = bs.Position;
+        // Reserve space for headers
+        bs.Position += Blobs.Count * BundleBlob.InfoSize;
+
+        // 1. Write Metadata
+        for (int i = 0; i < Blobs.Count; i++)
+        {
+            BundleBlob blob = Blobs[i];
+
+            // Sync versions for creation context
+            blob.VersionMajor = VersionMajor;
+            blob.VersionMinor = VersionMinor;
+
+            long currentMetadataOffset = bs.Position;
+            blob.CreateModelBinMetadatas(bs);
+
+            // Update Blob Header with Metadata info
+            long currentPos = bs.Position;
+            bs.Position = blobHeadersStart + (i * BundleBlob.InfoSize);
+            bs.Position += 6; // Skip Tag, Version
+            bs.WriteUInt16((ushort)blob.Metadatas.Count);
+            bs.WriteUInt32((uint)(currentMetadataOffset - baseBundleOffset));
+            bs.Position = currentPos;
+        }
+
+        bs.Align(0x04, true);
+        long headerEndPos = bs.Position;
+        long headerSize = headerEndPos - baseBundleOffset;
+
+        // 2. Write Blob Data
+        for (int i = 0; i < Blobs.Count; i++)
+        {
+            BundleBlob blob = Blobs[i];
+            long blobDataStart = bs.Position;
+
+            // Call the specific CreateModelBinBlobData logic
+            blob.CreateModelBinBlobData(bs);
+
+            long blobDataEnd = bs.Position;
+            uint uncompressedSize = (uint)(blobDataEnd - blobDataStart);
+
+            bs.Align(0x04, true);
+            long nextBlobStart = bs.Position;
+
+            // Update Blob Header with Data info
+            bs.Position = blobHeadersStart + (i * BundleBlob.InfoSize);
+            bs.WriteUInt32(blob.Tag);
+            bs.WriteByte(blob.VersionMajor);
+            bs.WriteByte(blob.VersionMinor);
+            bs.Position += 6; // Skip Metadata info
+            bs.Position += 4; // Skip Metadata Offset
+
+            bs.WriteUInt32((uint)(blobDataStart - baseBundleOffset));
+            bs.WriteUInt32(uncompressedSize); // Compressed
+            bs.WriteUInt32(uncompressedSize); // Uncompressed
+
+            bs.Position = nextBlobStart;
+        }
+
+        long totalSize = bs.Position - baseBundleOffset;
+
+        // 3. Finalize Header
+        bs.Position = baseBundleOffset + 6;
+        if (VersionMajor > 1 || (VersionMajor == 1 && VersionMinor >= 1))
+        {
+            bs.Position += 2;
+            bs.WriteUInt32((uint)headerSize);
+            bs.WriteUInt32((uint)totalSize);
+        }
+        else
+        {
+            bs.Position += 2; // Skip padding/blobCount in v1.0
+            bs.WriteUInt32((uint)headerSize);
+            bs.WriteUInt32((uint)totalSize);
+        }
+        bs.Position = baseBundleOffset + totalSize;
+    }
+
     public BundleBlob GetBlobByIndex(uint tag, int index)
     {
         int current = 0;

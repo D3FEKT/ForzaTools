@@ -75,9 +75,11 @@ namespace ForzaTools.ForzaAnalyzer.Views
 
             if (e.Action == NotifyCollectionChangedAction.Reset)
             {
-                while (NavView.MenuItems.Count > 3)
+                // Assuming Home, Materials, ModelViewer, and CreateModelBin are the first 4 items (indices 0-3)
+                // Adjust this count if you have more static items in XAML
+                while (NavView.MenuItems.Count > 4)
                 {
-                    NavView.MenuItems.RemoveAt(3);
+                    NavView.MenuItems.RemoveAt(4);
                 }
             }
         }
@@ -114,6 +116,12 @@ namespace ForzaTools.ForzaAnalyzer.Views
                 {
                     ContentFrame.Navigate(typeof(ModelViewerPage), this.ViewModel);
                 }
+                // --- ADD THIS BLOCK ---
+                else if (tag == "CreateModelBinPage")
+                {
+                    ContentFrame.Navigate(typeof(CreateModelBinPage));
+                }
+                // ----------------------
                 else if (item.Tag is FileViewModel fileVm)
                 {
                     ContentFrame.Navigate(typeof(FileDetailsPage), fileVm);

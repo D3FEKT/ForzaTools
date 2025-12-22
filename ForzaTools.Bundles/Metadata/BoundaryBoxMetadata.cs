@@ -26,4 +26,10 @@ public class BoundaryBoxMetadata : BundleMetadata
         bs.WriteSingle(Min.X); bs.WriteSingle(Min.Y); bs.WriteSingle(Min.Z);
         bs.WriteSingle(Max.X); bs.WriteSingle(Max.Y); bs.WriteSingle(Max.Z);
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        bs.WriteSingle(Min.X); bs.WriteSingle(Min.Y); bs.WriteSingle(Min.Z);
+        bs.WriteSingle(Max.X); bs.WriteSingle(Max.Y); bs.WriteSingle(Max.Z);
+    }
 }

@@ -55,6 +55,26 @@ public class MaterialShaderParameterBlob : BundleBlob
             bs.WriteUInt32(Unk3);
         }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        var safeParams = Parameters ?? new List<ShaderParameter>();
+
+        if (IsAtLeastVersion(2, 1))
+            bs.WriteUInt16((ushort)safeParams.Count);
+        else
+            bs.WriteByte((byte)safeParams.Count);
+
+        foreach (var param in safeParams)
+            param.Serialize(bs, this); // Reusing existing Serialize as it handles values well
+
+        if (IsAtLeastVersion(2, 0) && Tag == Bundle.TAG_BLOB_MaterialShaderParameter)
+        {
+            bs.WriteUInt32(Unk1);
+            bs.WriteUInt32(Unk2);
+            bs.WriteUInt32(Unk3);
+        }
+    }
 }
 
 public class ShaderParameter
@@ -189,7 +209,12 @@ public class ShaderParameter
                 if (VersionMajor < 2) bs.WriteBytes(new byte[8]);
                 break;
         }
+
+
     }
+
+
+
 }
 
 public class TextureParameter

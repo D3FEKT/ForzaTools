@@ -16,4 +16,9 @@ public class GenericBlob : BundleBlob
         if (Data != null)
             bs.WriteBytes(Data);
     }
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        if (Data != null)
+            bs.WriteBytes(Data);
+    }
 }

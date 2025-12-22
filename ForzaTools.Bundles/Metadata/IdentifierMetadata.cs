@@ -21,4 +21,9 @@ public class IdentifierMetadata : BundleMetadata
     {
         bs.WriteUInt32(Id);
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        bs.WriteUInt32(Id);
+    }
 }

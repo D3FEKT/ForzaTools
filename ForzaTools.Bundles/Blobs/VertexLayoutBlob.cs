@@ -65,6 +65,38 @@ public class VertexLayoutBlob : BundleBlob
             bs.WriteUInt32(Flags);
     }
 
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        var safeNames = SemanticNames ?? new List<string>();
+        bs.WriteUInt16((ushort)safeNames.Count);
+        foreach (string semanticName in safeNames)
+        {
+            bs.WriteString(semanticName ?? "", StringCoding.Int32CharCount);
+        }
+
+        var safeElements = Elements ?? new List<D3D12_INPUT_LAYOUT_DESC>();
+        bs.WriteUInt16((ushort)safeElements.Count);
+        foreach (D3D12_INPUT_LAYOUT_DESC element in safeElements)
+        {
+            element.Serialize(bs); // Calls helper
+        }
+
+        if (IsAtLeastVersion(1, 0))
+        {
+            // Ensure PackedFormats align with Elements count or write default
+            for (int i = 0; i < safeElements.Count; i++)
+            {
+                if (PackedFormats != null && i < PackedFormats.Count)
+                    bs.WriteInt32((int)PackedFormats[i]);
+                else
+                    bs.WriteInt32((int)safeElements[i].Format); // Fallback to element format
+            }
+        }
+
+        if (IsAtLeastVersion(1, 1))
+            bs.WriteUInt32(Flags);
+    }
+
     // --- NEW METHOD ADDED HERE ---
     public int GetDataOffsetOfElement(string semanticName, int semanticIndex)
     {

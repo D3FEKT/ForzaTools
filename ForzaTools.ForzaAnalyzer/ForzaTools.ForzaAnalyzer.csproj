@@ -18,6 +18,7 @@
 
 	<ItemGroup>
 		<None Remove="FileDetailsPage.xaml" />
+		<None Remove="Views\CreateModelBinViewPage.xaml" />
 		<None Remove="Views\CreateZipPage.xaml" />
 		<None Remove="Views\MaterialsPage.xaml" />
 		<None Remove="Views\ShellPage.xaml" />
@@ -53,6 +54,13 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <None Include="C:\Users\xenon\Desktop\328e3904-e6d2-4cee-8c47-e651271f6be0.png">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
 		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7175" />
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.251106002" />
@@ -60,6 +68,12 @@
 
 		<PackageReference Include="HelixToolkit.WinUI" Version="2.25.0" />
 		<PackageReference Include="SharpDX.Mathematics" Version="4.2.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Page Update="Views\CreateModelBinViewPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </Page>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -98,5 +112,7 @@
 		<PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
 		<PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
 		<PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+		<PackageIcon>328e3904-e6d2-4cee-8c47-e651271f6be0.png</PackageIcon>
+		<Title>ForzaTech Studio</Title>
 	</PropertyGroup>
 </Project>

@@ -40,6 +40,22 @@ public class VDCLMetadata : BundleMetadata
             }
         }
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        if (Version >= 2)
+        {
+            var safeEntries = Entries ?? new List<VDCLEntry>();
+            if (Version >= 3)
+                bs.WriteInt32(safeEntries.Count);
+
+            foreach (var entry in safeEntries)
+            {
+                bs.WriteUInt32(entry.NameHash);
+                bs.WriteUInt32(entry.Unk);
+            }
+        }
+    }
 }
 
 public class VDCLEntry

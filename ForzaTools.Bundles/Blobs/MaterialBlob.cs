@@ -23,4 +23,21 @@ public class MaterialBlob : BundleBlob
             Bundle.Serialize(bs.BaseStream);
         }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        if (Bundle != null)
+        {
+            Bundle.CreateModelBin(bs.BaseStream);
+        }
+        else
+        {
+            // If no bundle exists, create a dummy one to satisfy file structure or throw?
+            // Creating an empty bundle with 0 blobs
+            var emptyBundle = new Bundle();
+            emptyBundle.VersionMajor = this.VersionMajor;
+            emptyBundle.VersionMinor = this.VersionMinor;
+            emptyBundle.CreateModelBin(bs.BaseStream);
+        }
+    }
 }

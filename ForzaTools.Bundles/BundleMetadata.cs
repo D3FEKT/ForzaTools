@@ -55,5 +55,7 @@ public abstract class BundleMetadata
 
     public abstract void SerializeMetadataData(BinaryStream bs);
 
+    public abstract void CreateModelBinMetadataData(BinaryStream bs);
+
     public byte[] GetContents() => _data;
 }

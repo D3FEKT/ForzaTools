@@ -44,4 +44,13 @@ public class TextureContentHeaderMetadata : BundleMetadata
         // For now, write back the original bytes to avoid corruption.
         bs.Write(GetContents());
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        // If we have content bytes, write them
+        if (GetContents() != null)
+            bs.Write(GetContents());
+        else
+            bs.WriteBytes(new byte[0]); // Safe default
+    }
 }

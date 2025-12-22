@@ -15,4 +15,9 @@ public class ACMRMetadata : BundleMetadata
     {
         bs.WriteSingle(AverageCacheMissRatio);
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        bs.WriteSingle(AverageCacheMissRatio);
+    }
 }

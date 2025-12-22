@@ -20,4 +20,12 @@ public class TextureContentBlob : BundleBlob
         if (Data != null)
             bs.WriteBytes(Data);
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        if (Data != null)
+            bs.WriteBytes(Data);
+    }
+
+
 }

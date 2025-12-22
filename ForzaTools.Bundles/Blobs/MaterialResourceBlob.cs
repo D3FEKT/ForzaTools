@@ -17,4 +17,9 @@ public class MaterialResourceBlob : BundleBlob
     {
         bs.WriteString(Path, StringCoding.VariableByteCount);
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        bs.WriteString(Path ?? "", StringCoding.VariableByteCount);
+    }
 }

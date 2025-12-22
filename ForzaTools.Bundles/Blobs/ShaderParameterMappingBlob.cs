@@ -62,6 +62,31 @@ public class ShaderParameterMappingBlob : BundleBlob
             }
         }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        if (IsAtLeastVersion(3, 1))
+            bs.WriteUInt16((ushort)Mappings.Count);
+        else
+            bs.WriteByte((byte)Mappings.Count);
+
+        foreach (var entry in Mappings)
+        {
+            if (IsAtLeastVersion(2, 0))
+            {
+                bs.WriteUInt32(entry.NameHash);
+                bs.WriteUInt16((ushort)entry.IdOrOffset);
+
+                if (IsAtLeastVersion(3, 0))
+                    bs.WriteBytes(entry.Guid.ToByteArray());
+            }
+            else
+            {
+                bs.WriteString(entry.Name ?? "", StringCoding.VariableByteCount);
+                bs.WriteByte((byte)entry.IdOrOffset);
+            }
+        }
+    }
 }
 
 public class MappingEntry

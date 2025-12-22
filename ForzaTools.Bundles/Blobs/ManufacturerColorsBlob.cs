@@ -58,6 +58,28 @@ public class ManufacturerColorsBlob : BundleBlob
             }
         }
     }
+    //not needed for modelbin
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        bs.WriteByte((byte)Groups.Count);
+        foreach (var group in Groups)
+        {
+            bs.WriteByte((byte)group.Entries.Count);
+            foreach (var entry in group.Entries)
+            {
+                if (IsAtLeastVersion(1, 1))
+                    bs.WriteUInt32(entry.MaterialIndexMask);
+                else
+                    bs.WriteUInt16((ushort)entry.MaterialIndexMask);
+
+                bs.WriteSingle(entry.PreviewColor.X);
+                bs.WriteSingle(entry.PreviewColor.Y);
+                bs.WriteSingle(entry.PreviewColor.Z);
+
+                bs.WriteString(entry.Path ?? "", StringCoding.VariableByteCount);
+            }
+        }
+    }
 }
 
 public class ManufacturerColorGroup

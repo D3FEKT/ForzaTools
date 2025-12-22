@@ -24,4 +24,13 @@ public class MorphBlob : BundleBlob
             bs.WriteString(s, StringCoding.Int32CharCount);
         }
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        bs.WriteInt16((short)Strings.Count);
+        foreach (var s in Strings)
+        {
+            bs.WriteString(s, StringCoding.Int32CharCount);
+        }
+    }
 }

@@ -15,4 +15,10 @@ public class MorphBufferBlob : BundleBlob
     {
         Header.Serialize(bs, VersionMajor, VersionMinor);
     }
+
+    // In IndexBufferBlob, VertexBufferBlob, MorphBufferBlob, SkinBufferBlob
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        Header.CreateModelBin(bs, VersionMajor, VersionMinor);
+    }
 }

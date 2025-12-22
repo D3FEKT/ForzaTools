@@ -21,4 +21,9 @@ public class NameMetadata : BundleMetadata
     {
         bs.WriteString(Name, StringCoding.Raw);
     }
+
+    public override void CreateModelBinMetadataData(BinaryStream bs)
+    {
+        bs.WriteString(Name ?? "", StringCoding.Raw);
+    }
 }

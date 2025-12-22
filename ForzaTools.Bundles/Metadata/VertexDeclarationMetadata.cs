@@ -57,5 +57,21 @@ namespace ForzaTools.Bundles.Metadata
                 }
             }
         }
+
+        public override void CreateModelBinMetadataData(BinaryStream bs)
+        {
+            if (Version >= 2)
+            {
+                // Write the size
+                bs.WriteInt32(UnkV2_Size);
+
+                // Write the array of entries
+                foreach (var entry in UnkV2)
+                {
+                    bs.WriteUInt32(entry.Unk1);
+                    bs.WriteUInt32(entry.Unk2);
+                }
+            }
+        }
     }
 }

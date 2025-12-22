@@ -30,4 +30,15 @@ public class MatLBlob : BundleBlob
         if (IsAtLeastVersion(1, 2))
             bs.WriteString(PathV1_2, StringCoding.VariableByteCount);
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        bs.WriteString(Path ?? "", StringCoding.VariableByteCount);
+
+        if (IsAtLeastVersion(1, 1))
+            bs.WriteString(PathV1_1 ?? "", StringCoding.VariableByteCount);
+
+        if (IsAtLeastVersion(1, 2))
+            bs.WriteString(PathV1_2 ?? "", StringCoding.VariableByteCount);
+    }
 }

@@ -1,4 +1,5 @@
 ﻿using Syroot.BinaryData;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ForzaTools.Bundles.Blobs;
 
@@ -18,6 +19,12 @@ public class VersBlob : BundleBlob
         bs.WriteUInt32(Unk);
         bs.WriteString(Path, StringCoding.VariableByteCount);
     }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
+    {
+        bs.WriteUInt32(Unk);
+        bs.WriteString(Path, StringCoding.VariableByteCount);
+    }
 }
 
 public class VarsBlob : BundleBlob
@@ -31,6 +38,12 @@ public class VarsBlob : BundleBlob
     }
 
     public override void SerializeBlobData(BinaryStream bs)
+    {
+        if (Data != null)
+            bs.WriteBytes(Data);
+    }
+
+    public override void CreateModelBinBlobData(BinaryStream bs)
     {
         if (Data != null)
             bs.WriteBytes(Data);
