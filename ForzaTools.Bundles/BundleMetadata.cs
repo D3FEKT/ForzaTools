@@ -51,6 +51,8 @@ public abstract class BundleMetadata
         ReadMetadataData(bs);
     }
 
+
+
     public abstract void ReadMetadataData(BinaryStream bs);
 
     public abstract void SerializeMetadataData(BinaryStream bs);
