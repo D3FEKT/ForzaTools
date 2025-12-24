@@ -1,7 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using Syroot.BinaryData;
+﻿using ForzaTools.Bundles.Metadata;
 using ForzaTools.Shared;
+using Syroot.BinaryData;
+using System;
+using System.Collections.Generic;
 
 namespace ForzaTools.Bundles.Blobs;
 
@@ -67,63 +68,74 @@ public class VertexLayoutBlob : BundleBlob
 
     public override void CreateModelBinBlobData(BinaryStream bs)
     {
-        var safeNames = SemanticNames ?? new List<string>();
-        bs.WriteUInt16((ushort)safeNames.Count);
-        foreach (string semanticName in safeNames)
-        {
-            bs.WriteString(semanticName ?? "", StringCoding.Int32CharCount);
-        }
+        // 1. Semantic Names Length: 5
+        bs.WriteUInt16(5);
 
-        var safeElements = Elements ?? new List<D3D12_INPUT_LAYOUT_DESC>();
-        bs.WriteUInt16((ushort)safeElements.Count);
-        foreach (D3D12_INPUT_LAYOUT_DESC element in safeElements)
-        {
-            element.Serialize(bs); // Calls helper
-        }
+        // 2. Semantic Names
+        WriteLayoutString(bs, "POSITION");
+        WriteLayoutString(bs, "NORMAL");
+        WriteLayoutString(bs, "TEXCOORD");
+        WriteLayoutString(bs, "TANGENT");
+        WriteLayoutString(bs, "COLOR");
 
-        if (IsAtLeastVersion(1, 0))
-        {
-            // Ensure PackedFormats align with Elements count or write default
-            for (int i = 0; i < safeElements.Count; i++)
-            {
-                if (PackedFormats != null && i < PackedFormats.Count)
-                    bs.WriteInt32((int)PackedFormats[i]);
-                else
-                    bs.WriteInt32((int)safeElements[i].Format); // Fallback to element format
-            }
-        }
+        // 3. Num Elements: 11
+        bs.WriteUInt16(11);
 
-        if (IsAtLeastVersion(1, 1))
-            bs.WriteUInt32(Flags);
+        // 4. Element Descriptors
+        WriteElement(bs, 0, 0, 0, 0, 13, -1, 0); // POSITION
+        WriteElement(bs, 1, 0, 1, 0, 37, -1, 0); // NORMAL
+        WriteElement(bs, 2, 0, 1, 0, 35, -1, 0); // TEXCOORD
+
+        // TANGENTS & COLORS
+        WriteElement(bs, 3, 0, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 1, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 2, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 3, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 4, 1, 0, 35, -1, 0);
+
+        WriteElement(bs, 4, 0, 1, 0, 24, -1, 0);
+        WriteElement(bs, 4, 1, 1, 0, 24, -1, 0);
+        WriteElement(bs, 4, 2, 1, 0, 24, -1, 0);
+
+        // 5. Element Formats
+        bs.WriteInt32(49); bs.WriteInt32(52); bs.WriteInt32(46);
+        bs.WriteInt32(46); bs.WriteInt32(46); bs.WriteInt32(46); bs.WriteInt32(46);
+        bs.WriteInt32(48); bs.WriteInt32(48); bs.WriteInt32(48); bs.WriteInt32(22);
+
+        // 6. Semantic Bitfield
+        bs.WriteUInt32(0x000004FF);
     }
 
-    // --- NEW METHOD ADDED HERE ---
-    public int GetDataOffsetOfElement(string semanticName, int semanticIndex)
+    private void WriteLayoutString(BinaryStream bs, string str)
     {
-        int offset = 0;
-        for (int i = 0; i < Elements.Count; i++)
-        {
-            var element = Elements[i];
-
-            // SemanticNameIndex points to the string in the SemanticNames list
-            string name = SemanticNames[element.SemanticNameIndex];
-
-            if (name == semanticName && element.SemanticIndex == semanticIndex)
-                return offset;
-
-            DXGI_FORMAT format = PackedFormats[i];
-            offset += GetSizeOfElementFormat(format);
-
-            // Replicate alignment logic (padding)
-            if (i + 1 < Elements.Count && offset % 4 != 0)
-            {
-                if (GetSizeOfElementFormat(PackedFormats[i + 1]) >= 4)
-                    offset += (offset % 4);
-            }
-        }
-        return -1;
+        // FIXED: Use Int32CharCount to write 4-byte length prefix
+        bs.WriteString(str, StringCoding.Int32CharCount);
     }
-    // -----------------------------
+
+    private void WriteElement(BinaryStream bs, ushort nameIdx, ushort semIdx, ushort slot, ushort slotClass, int format, int offset, int step)
+    {
+        bs.WriteUInt16(nameIdx);
+        bs.WriteUInt16(semIdx);
+        bs.WriteUInt16(slot);
+        bs.WriteUInt16(slotClass);
+        bs.WriteInt32(format);
+        bs.WriteInt32(offset);
+        bs.WriteInt32(step);
+    }
+
+    public override void CreateModelBinMetadatas(BinaryStream bs)
+    {
+        this.Metadatas.Clear();
+
+        // FIXED: Add metadata to list instead of writing directly
+        this.Metadatas.Add(new IdentifierMetadata
+        {
+            Tag = BundleMetadata.TAG_METADATA_Identifier,
+            Id = this.Id
+        });
+
+        base.CreateModelBinMetadatas(bs);
+    }
 
     public byte GetTotalVertexSize()
     {

@@ -17,8 +17,17 @@ public abstract class BundleBlob
     public uint CompressedSize { get; set; }
     public uint UncompressedSize { get; set; }
 
-    // Added: Store the original file offset for hex viewing
     public long FileOffset { get; set; }
+
+    // FIXED: Changed Guid to uint to match IdentifierMetadata
+    public uint Id { get; set; } = 1;
+
+    // FIXED: Expose data for subclasses to write
+    public byte[] Data
+    {
+        get => GetContents() ?? Array.Empty<byte>();
+        set => _data = value;
+    }
 
     public List<BundleMetadata> Metadatas { get; set; } = new List<BundleMetadata>();
 
@@ -50,7 +59,6 @@ public abstract class BundleBlob
 
         long basePos = bs.Position;
 
-        // Read Metadata
         for (int i = 0; i < metadataCount; i++)
         {
             bs.Position = baseBundleOffset + metadataOffset + (i * BundleMetadata.InfoSize);
@@ -63,16 +71,10 @@ public abstract class BundleBlob
                 metadata.Read(bs);
                 Metadatas.Add(metadata);
             }
-            else
-            {
-                // Skip unknown
-                // throw new NotImplementedException($"Unimplemented metadata tag {metadataTag:X8}");
-            }
         }
 
-        // Read Blob Data
         bs.Position = baseBundleOffset + dataOffset;
-        this.FileOffset = bs.Position; // Save offset
+        this.FileOffset = bs.Position;
 
         uint sizeToRead = UncompressedSize > 0 ? UncompressedSize : CompressedSize;
         _data = bs.ReadBytes((int)sizeToRead);
@@ -82,7 +84,6 @@ public abstract class BundleBlob
     }
 
     public abstract void ReadBlobData(BinaryStream bs);
-
     public abstract void SerializeBlobData(BinaryStream bs);
 
     private BundleMetadata GetMetadataObjectByTag(uint tag)
@@ -134,9 +135,14 @@ public abstract class BundleBlob
         }
 
         bs.Position = lastDataPos;
+
+    }
+    public virtual void CreateModelBinMetadatas(BinaryStream bs)
+    {
+        WriteMetadatasInternal(bs, m => m.CreateModelBinMetadataData(bs));
     }
 
-    public void CreateModelBinMetadatas(BinaryStream bs)
+    private void WriteMetadatasInternal(BinaryStream bs, Action<BundleMetadata> writeDataAction)
     {
         long headersStartOffset = bs.Position;
         long lastDataPos = bs.Position + (BundleMetadata.InfoSize * Metadatas.Count);
@@ -149,17 +155,15 @@ public abstract class BundleBlob
             long dataStartOffset = lastDataPos;
 
             BundleMetadata metadata = Metadatas[j];
-            metadata.CreateModelBinMetadataData(bs);
+            writeDataAction(metadata);
 
             ulong relativeOffset = (ulong)(lastDataPos - headerOffset);
             lastDataPos = bs.Position;
 
-            // Write Header
             bs.Position = headerOffset;
             bs.WriteUInt32(metadata.Tag);
 
             ulong metadataSize = (ulong)(lastDataPos - dataStartOffset);
-            // Flags: Size (12 bits) | Version (4 bits)
             ushort flags = (ushort)(metadataSize << 4 | (ushort)(metadata.Version & 0b1111));
             bs.WriteUInt16(flags);
 
@@ -169,7 +173,6 @@ public abstract class BundleBlob
         bs.Position = lastDataPos;
     }
 
-    // Abstract method to be implemented by all blobs
     public abstract void CreateModelBinBlobData(BinaryStream bs);
 
     public byte[] GetContents() => _data;

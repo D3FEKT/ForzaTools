@@ -1,4 +1,5 @@
 ﻿using Syroot.BinaryData;
+using ForzaTools.Bundles.Metadata;
 
 namespace ForzaTools.Bundles.Blobs;
 
@@ -16,9 +17,25 @@ public class IndexBufferBlob : BundleBlob
         Header.Serialize(bs, VersionMajor, VersionMinor);
     }
 
-    // In IndexBufferBlob, VertexBufferBlob, MorphBufferBlob, SkinBufferBlob
     public override void CreateModelBinBlobData(BinaryStream bs)
     {
-        Header.CreateModelBin(bs, VersionMajor, VersionMinor);
+        // Calculate element count based on Data length and Stride
+        int count = 0;
+        if (Header.Stride > 0)
+            count = Data.Length / (int)Header.Stride;
+
+        bs.WriteInt32(count);         // Length (Count)
+        bs.WriteInt32(Data.Length);   // Size
+        bs.WriteUInt16((ushort)Header.Stride);
+
+        // v1.0 Header Fields
+        bs.WriteByte(1); // NumElements
+        bs.WriteByte(0); // Padding
+        bs.WriteInt32((int)Header.Format);
+
+        // Write the raw indices data
+        bs.Write(Data);
     }
+
+    // Use base.CreateModelBinMetadatas via inheritance
 }

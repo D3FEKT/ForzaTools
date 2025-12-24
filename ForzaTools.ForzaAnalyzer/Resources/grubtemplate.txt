@@ -1,0 +1,2074 @@
+//------------------------------------------------
+//--- 010 Editor v14.0 Binary Template
+//
+//      File: Bundle (Forza; "Grub" tag, for some reason)
+//   Authors: Nenkai, Doliman100
+//   Version: 1.09 (FM5/6/6Apex/7/2023, FH2/3/4/5)
+//   Purpose: Storing textures, models and more
+//  Category: 
+// File Mask: *.modelbin, *.materialbin, *.shaderbin, ManufacturerColors.bin, *.swatchbin, *.pb, *.particlebin, *.stx.bin
+//  ID Bytes: 62 75 72 47
+//   History: 
+//------------------------------------------------
+
+typedef enum {
+    //Auto = 0,
+    Motorsport = 1,
+    Horizon = 2
+} Series;
+
+local Series series = Motorsport; // edit me
+
+LittleEndian();
+BitfieldDisablePadding();
+
+typedef ubyte Boolean <read=BooleanToString>;
+typedef uint Boolean4 <read=BooleanToString>;
+
+string BooleanToString(uint value) {
+    if (value == 1) {
+        return "true";
+    } else if (value == 0) {
+        return "false";
+    }
+    local string s;
+    SPrintf(s, "error (%d)", value);
+    return s;
+}
+
+typedef struct {
+    int length;
+    char data[length];
+} String <read=data, write=0>; // std::string
+
+typedef struct {
+    local int length = 0; // 7BitEncodedInt
+    local int length_shift;
+    for (length_shift = 0; !exists(length_next) || length_next; length_shift += 7) {
+        int length_byte : 7;
+        ubyte length_next : 1;
+        length |= (length_byte << length_shift);
+    }
+    if (length > 0) {
+        char data[length];
+    } else {
+        local string data;
+    }
+} _7BitString <read=data, write=0>;
+
+typedef struct {
+    float x;
+    float y;
+} DirectX_XMFLOAT2 <read=Str("%g %g", x, y, z)>;
+
+typedef struct {
+    float x;
+    float y;
+    float z;
+} DirectX_XMFLOAT3 <read=Str("%g %g %g", x, y, z)>;
+
+typedef struct {
+    float x;
+    float y;
+    float z;
+    float w;
+} DirectX_XMFLOAT4 <read=Str("%g %g %g %g", x, y, z, w)>;
+
+typedef DirectX_XMFLOAT4 DirectX_XMVECTOR; // DirectX::XMVECTOR
+
+typedef struct {
+    local int i;
+    for (i = 0; i < 4; i++) {
+        DirectX_XMVECTOR r;
+    }
+} DirectX_XMMATRIX; // DirectX::XMMATRIX
+
+typedef struct {
+    int a;
+    int b;
+    int c;
+} Face <read=Str("%d %d %d", a, b, c)>;
+
+typedef struct {
+    hfloat x;
+    hfloat y;
+    hfloat z;
+    hfloat id;
+} Weight;
+
+typedef enum <int> {
+    DXGI_FORMAT_UNKNOWN = 0,
+    DXGI_FORMAT_R32G32B32A32_TYPELESS = 1,
+    DXGI_FORMAT_R32G32B32A32_FLOAT = 2,
+    DXGI_FORMAT_R32G32B32A32_UINT = 3,
+    DXGI_FORMAT_R32G32B32A32_SINT = 4,
+    DXGI_FORMAT_R32G32B32_TYPELESS = 5,
+    DXGI_FORMAT_R32G32B32_FLOAT = 6,
+    DXGI_FORMAT_R32G32B32_UINT = 7,
+    DXGI_FORMAT_R32G32B32_SINT = 8,
+    DXGI_FORMAT_R16G16B16A16_TYPELESS = 9,
+    DXGI_FORMAT_R16G16B16A16_FLOAT = 10,
+    DXGI_FORMAT_R16G16B16A16_UNORM = 11,
+    DXGI_FORMAT_R16G16B16A16_UINT = 12,
+    DXGI_FORMAT_R16G16B16A16_SNORM = 13,
+    DXGI_FORMAT_R16G16B16A16_SINT = 14,
+    DXGI_FORMAT_R32G32_TYPELESS = 15,
+    DXGI_FORMAT_R32G32_FLOAT = 16,
+    DXGI_FORMAT_R32G32_UINT = 17,
+    DXGI_FORMAT_R32G32_SINT = 18,
+    DXGI_FORMAT_R32G8X24_TYPELESS = 19,
+    DXGI_FORMAT_D32_FLOAT_S8X24_UINT = 20,
+    DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS = 21,
+    DXGI_FORMAT_X32_TYPELESS_G8X24_UINT = 22,
+    DXGI_FORMAT_R10G10B10A2_TYPELESS = 23,
+    DXGI_FORMAT_R10G10B10A2_UNORM = 24,
+    DXGI_FORMAT_R10G10B10A2_UINT = 25,
+    DXGI_FORMAT_R11G11B10_FLOAT = 26,
+    DXGI_FORMAT_R8G8B8A8_TYPELESS = 27,
+    DXGI_FORMAT_R8G8B8A8_UNORM = 28,
+    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB = 29,
+    DXGI_FORMAT_R8G8B8A8_UINT = 30,
+    DXGI_FORMAT_R8G8B8A8_SNORM = 31,
+    DXGI_FORMAT_R8G8B8A8_SINT = 32,
+    DXGI_FORMAT_R16G16_TYPELESS = 33,
+    DXGI_FORMAT_R16G16_FLOAT = 34,
+    DXGI_FORMAT_R16G16_UNORM = 35,
+    DXGI_FORMAT_R16G16_UINT = 36,
+    DXGI_FORMAT_R16G16_SNORM = 37,
+    DXGI_FORMAT_R16G16_SINT = 38,
+    DXGI_FORMAT_R32_TYPELESS = 39,
+    DXGI_FORMAT_D32_FLOAT = 40,
+    DXGI_FORMAT_R32_FLOAT = 41,
+    DXGI_FORMAT_R32_UINT = 42,
+    DXGI_FORMAT_R32_SINT = 43,
+    DXGI_FORMAT_R24G8_TYPELESS = 44,
+    DXGI_FORMAT_D24_UNORM_S8_UINT = 45,
+    DXGI_FORMAT_R24_UNORM_X8_TYPELESS = 46,
+    DXGI_FORMAT_X24_TYPELESS_G8_UINT = 47,
+    DXGI_FORMAT_R8G8_TYPELESS = 48,
+    DXGI_FORMAT_R8G8_UNORM = 49,
+    DXGI_FORMAT_R8G8_UINT = 50,
+    DXGI_FORMAT_R8G8_SNORM = 51,
+    DXGI_FORMAT_R8G8_SINT = 52,
+    DXGI_FORMAT_R16_TYPELESS = 53,
+    DXGI_FORMAT_R16_FLOAT = 54,
+    DXGI_FORMAT_D16_UNORM = 55,
+    DXGI_FORMAT_R16_UNORM = 56,
+    DXGI_FORMAT_R16_UINT = 57,
+    DXGI_FORMAT_R16_SNORM = 58,
+    DXGI_FORMAT_R16_SINT = 59,
+    DXGI_FORMAT_R8_TYPELESS = 60,
+    DXGI_FORMAT_R8_UNORM = 61,
+    DXGI_FORMAT_R8_UINT = 62,
+    DXGI_FORMAT_R8_SNORM = 63,
+    DXGI_FORMAT_R8_SINT = 64,
+    DXGI_FORMAT_A8_UNORM = 65,
+    DXGI_FORMAT_R1_UNORM = 66,
+    DXGI_FORMAT_R9G9B9E5_SHAREDEXP = 67,
+    DXGI_FORMAT_R8G8_B8G8_UNORM = 68,
+    DXGI_FORMAT_G8R8_G8B8_UNORM = 69,
+    DXGI_FORMAT_BC1_TYPELESS = 70,
+    DXGI_FORMAT_BC1_UNORM = 71,
+    DXGI_FORMAT_BC1_UNORM_SRGB = 72,
+    DXGI_FORMAT_BC2_TYPELESS = 73,
+    DXGI_FORMAT_BC2_UNORM = 74,
+    DXGI_FORMAT_BC2_UNORM_SRGB = 75,
+    DXGI_FORMAT_BC3_TYPELESS = 76,
+    DXGI_FORMAT_BC3_UNORM = 77,
+    DXGI_FORMAT_BC3_UNORM_SRGB = 78,
+    DXGI_FORMAT_BC4_TYPELESS = 79,
+    DXGI_FORMAT_BC4_UNORM = 80,
+    DXGI_FORMAT_BC4_SNORM = 81,
+    DXGI_FORMAT_BC5_TYPELESS = 82,
+    DXGI_FORMAT_BC5_UNORM = 83,
+    DXGI_FORMAT_BC5_SNORM = 84,
+    DXGI_FORMAT_B5G6R5_UNORM = 85,
+    DXGI_FORMAT_B5G5R5A1_UNORM = 86,
+    DXGI_FORMAT_B8G8R8A8_UNORM = 87,
+    DXGI_FORMAT_B8G8R8X8_UNORM = 88,
+    DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM = 89,
+    DXGI_FORMAT_B8G8R8A8_TYPELESS = 90,
+    DXGI_FORMAT_B8G8R8A8_UNORM_SRGB = 91,
+    DXGI_FORMAT_B8G8R8X8_TYPELESS = 92,
+    DXGI_FORMAT_B8G8R8X8_UNORM_SRGB = 93,
+    DXGI_FORMAT_BC6H_TYPELESS = 94,
+    DXGI_FORMAT_BC6H_UF16 = 95,
+    DXGI_FORMAT_BC6H_SF16 = 96,
+    DXGI_FORMAT_BC7_TYPELESS = 97,
+    DXGI_FORMAT_BC7_UNORM = 98,
+    DXGI_FORMAT_BC7_UNORM_SRGB = 99,
+    DXGI_FORMAT_AYUV = 100,
+    DXGI_FORMAT_Y410 = 101,
+    DXGI_FORMAT_Y416 = 102,
+    DXGI_FORMAT_NV12 = 103,
+    DXGI_FORMAT_P010 = 104,
+    DXGI_FORMAT_P016 = 105,
+    DXGI_FORMAT_420_OPAQUE = 106,
+    DXGI_FORMAT_YUY2 = 107,
+    DXGI_FORMAT_Y210 = 108,
+    DXGI_FORMAT_Y216 = 109,
+    DXGI_FORMAT_NV11 = 110,
+    DXGI_FORMAT_AI44 = 111,
+    DXGI_FORMAT_IA44 = 112,
+    DXGI_FORMAT_P8 = 113,
+    DXGI_FORMAT_A8P8 = 114,
+    DXGI_FORMAT_B4G4R4A4_UNORM = 115,
+    DXGI_FORMAT_P208 = 130,
+    DXGI_FORMAT_V208 = 131,
+    DXGI_FORMAT_V408 = 132,
+    DXGI_FORMAT_SAMPLER_FEEDBACK_MIN_MIP_OPAQUE,
+    DXGI_FORMAT_SAMPLER_FEEDBACK_MIP_REGION_USED_OPAQUE,
+    DXGI_FORMAT_FORCE_UINT = 0xffffffff
+} DXGI_FORMAT; // 1423685FC
+
+typedef enum <int> {
+    Float_32x4 = 0,
+    UInt_32x4,
+    Int_32x4,
+    Float_32x3,
+    UInt_32x3,
+    Int_32x3,
+    Float_32x2,
+    UInt_32x2,
+    Int_32x2,
+    Float_16x4,
+    UNorm_16x4,
+    UInt_16x4,
+    Norm_16x4,
+    Int_16x4,
+    Float_32,
+    UInt_32,
+    Int_32,
+    Float_16x2,
+    UNorm_16x2,
+    UInt_16x2,
+    Norm_16x2,
+    Int_16x2,
+    UNorm_8x4,
+    UInt_8x4,
+    Norm_8x4,
+    Int_8x4,
+    UNorm_10x3_2,
+    UInt_10x3_2,
+    UFloat_11_11_10,
+    Float_16,
+    UNorm_16,
+    UInt_16,
+    Norm_16,
+    Int_16,
+    UNorm_8x2,
+    UInt_8x2,
+    Norm_8x2,
+    Int_8x2,
+    UNorm_5_6_5,
+    UNorm_5x3_1,
+    UNorm_4x4,
+    UNorm_8,
+    UInt_8,
+    Norm_8,
+    Int_8,
+    MAdd_UNorm_16x4,
+    MAdd_UNorm_16x2,
+    MAdd_UNorm_16,
+    
+    // FH3
+    Fit_Norm_10x3_2,
+    MAdd_Norm_16x3_PackLeft,
+    MAdd_Norm_16x3_PackRight,
+    Norm_16x3_PackLeft,
+    Norm_16x3_PackRight,
+    // ElementFormats::Count = 53
+    
+    // FH5
+    Float_16x3_UInt32,
+    UFloat_999e5
+} ElementFormats; // enum ElementFormats::Enum; 142ADDD12
+
+typedef enum <ubyte> {
+    ShaderParameter_Vector = 0, // Float4; Vector4ShaderParameter, Vector3ShaderParameter
+    ShaderParameter_Color = 1, // Float4
+    ShaderParameter_Float = 2, // Float; ScaleShaderParameter
+    ShaderParameter_Bool = 3, // Boolean
+    ShaderParameter_Int = 4, // Int; CarShaderParameter, CarDirtShaderParameter, TrackShaderParameter, CarWheelBlurShaderParameter
+    ShaderParameter_Swizzle = 5, // Float4
+    ShaderParameter_Texture2D = 6, // Texture
+    ShaderParameter_Sampler = 7, // Sampler
+    ShaderParameter_ColorGradient = 8, // Texture
+    ShaderParameter_FunctionRange = 9, // Float4
+    ShaderParameter_Vector2 = 11 // Float2
+    //ShaderParameter_RenderTarget = ? // RenderTargetTexture
+} ShaderParameterType;
+
+//typedef enum <ubyte> {
+//    Int = 0; // ShaderParameterType::Int
+//    Float = 1;
+//    Float2 = 2;
+//    Float4 = 3;
+//    Boolean = 4;
+//    Texture = 5; // 142599670
+//    RenderTargetTexture = 6; // 14259A3C9
+//    Sampler = 7;
+//    // = 8 // initial value, Invalid?
+//} ShaderParameterType; // MaterialShaderParameter.h, enum ShaderParameterType::ParameterType
+
+// ---------------------------------------------
+
+const uint TAG_BUNDLE = 0x47727562; // 'Grub' - BundleTag
+
+// Textures (swatchbin)
+const uint TAG_BLOB_TextureContentBlob = 0x54584342; // 'TXCB'
+
+// Models (modelbin)
+const uint TAG_BLOB_Skeleton = 0x536B656C; // 'Skel'
+const uint TAG_BLOB_MorphTable = 0x4D727068; // 'Mrph'
+const uint TAG_BLOB_MaterialInstance = 0x4D617449; // 'MatI'
+const uint TAG_BLOB_Mesh = 0x4D657368; // 'Mesh'
+const uint TAG_BLOB_IndexBuffer = 0x496E6442; // 'IndB'
+const uint TAG_BLOB_VertexLayout = 0x564C6179; // 'VLay'
+const uint TAG_BLOB_InstancedVertexLayout = 0x494C6179; // 'ILay'
+const uint TAG_BLOB_VertexBuffer = 0x56657242; // 'VerB'
+const uint TAG_BLOB_MorphBuffer = 0x4D427566; // 'MBuf'
+const uint TAG_BLOB_SkinBuffer = 0x536B696E; // 'Skin'
+const uint TAG_BLOB_Model = 0x4D6F646C; // 'Modl'
+
+// Materials (materialbin)
+const uint TAG_BLOB_MATI = 0x4D415449; // 'MATI'
+const uint TAG_BLOB_MATL = 0x4D41544C; // 'MATL'
+const uint TAG_BLOB_MaterialShaderParameter = 0x4D545052; // 'MTPR'
+
+// Shaders (shaderbin)
+const uint TAG_BLOB_DefaultShaderParameter = 0x44465052; // 'DFPR'
+const uint TAG_BLOB_LightScenario = 0x4C534345; // 'LSCE'
+const uint TAG_BLOB_DebugLightScenario = 0x44424C53; // 'DBLS'
+const uint TAG_BLOB_CBMP = 0x43424D50; // 'CBMP'
+const uint TAG_BLOB_TXMP = 0x54584D50; // 'TXMP'
+const uint TAG_BLOB_SPMP = 0x53504D50; // 'SPMP'
+const uint TAG_BLOB_VARS = 0x56415253; // 'VARS' - Variables, Variants?
+const uint TAG_BLOB_VERS = 0x56455253; // 'VERS'
+const uint TAG_BLOB_TRGT = 0x54524754; // 'TRGT'
+
+// ManufacturerColors.bin
+const uint TAG_BLOB_ManufacturerColors = 0x4D4E434C; // 'MNCL'
+
+// particlebin
+const uint TAG_BLOB_ParticleBlob = 0x50434C42; // 'PCLB'
+
+// .stx.bin
+const uint TAG_BLOB_STex = 0x53546578; // 'STex'
+
+// Models (modelbin)
+const uint TAG_METADATA_Name = 0x4E616D65; // 'Name'
+const uint TAG_METADATA_TextureContentHeader = 0x54584348; // 'TXCH'
+const uint TAG_METADATA_Id = 0x49642020; // 'Id  '
+const uint TAG_METADATA_BoundingBox = 0x42426F78; // 'BBox'
+const uint TAG_METADATA_TextureReferenceHashes = 0x54526566; // 'TRef'
+const uint TAG_METADATA_ACMR = 0x41434D52; // 'ACMR'
+
+// Materials (materialbin)
+const uint TAG_METADATA_ATST = 0x41545354; // 'ATST' - Atlas?
+const uint TAG_METADATA_BLEN = 0x424C454E; // 'BLEN' - Blend?
+const uint TAG_METADATA_VDCL = 0x5644434C; // 'VDCL' - VD Color?
+
+string TagToString(uint value) { // 142AD25A0
+    local string s;
+    SPrintf(s, "%c%c%c%c", value >> 24, value >> 16, value >> 8, value);
+    return s;
+}
+
+typedef struct {
+    ubyte major;
+    ubyte minor;
+} Version <read=VersionToString>;
+
+string VersionToString(Version &version) {
+    local string s;
+    SPrintf(s, "%d.%d", version.major, version.minor);
+    return s;
+}
+ubyte IsAtLeastVersion(Version &version, ubyte major, ubyte minor) {
+    return version.major > major || version.major == major && version.minor >= minor;
+}
+ubyte IsAtMostVersion(Version &version, ubyte major, ubyte minor) {
+    return version.major < major || version.major == major && version.minor <= minor;
+}
+ubyte IsVersion(Version &version, ubyte major, ubyte minor) {
+    return version.major == major && version.minor == minor;
+}
+
+typedef struct {
+    Boolean LODS : 1;
+    Boolean LOD0 : 1;
+    Boolean LOD1 : 1;
+    Boolean LOD2 : 1;
+    Boolean LOD3 : 1;
+    Boolean LOD4 : 1;
+    Boolean LOD5 : 1;
+    ushort __padding__ : 9;
+} LODFlags; // struct CommonModel::LODFlags
+
+typedef enum { // TextureEncoding::Enum
+    TextureEncoding__Bc1 = 0,
+    TextureEncoding__Bc2 = 1,
+    TextureEncoding__Bc3 = 2,
+    TextureEncoding__UnsignedBc4 = 3,
+    TextureEncoding__SignedBc4 = 4,
+    TextureEncoding__UnsignedBc5 = 5,
+    TextureEncoding__SignedBc5 = 6,
+    TextureEncoding__UnsignedBc6H = 7,
+    TextureEncoding__SignedBc6H = 8,
+    TextureEncoding__Bc7 = 9,
+    TextureEncoding__R32G32B32A32Float = 10,
+    TextureEncoding__R16G16B16A16 = 11,
+    TextureEncoding__R16G16B16A16Float = 12,
+    TextureEncoding__R8G8B8A8 = 13,
+    TextureEncoding__B5G6R5 = 14,
+    TextureEncoding__B5G5R5A1 = 15,
+    TextureEncoding__Dct = 16,
+    TextureEncoding__IntegerDct = 17,
+    TextureEncoding__Procedural = 18,
+    TextureEncoding__R8 = 19,
+    TextureEncoding__A8 = 20,
+    TextureEncoding__R8G8 = 21,
+    TextureEncoding__Bc7_HighQuality = 22
+} TextureEncoding;
+
+typedef enum { // TextureTranscoding::Enum
+    TextureTranscoding__None = 0,
+    TextureTranscoding__BcBlockRle = 1,
+    TextureTranscoding__Bc1 = 2,
+    TextureTranscoding__Bc2 = 3,
+    TextureTranscoding__Bc3 = 4,
+    TextureTranscoding__UnsignedBc4 = 5,
+    TextureTranscoding__SignedBc4 = 6,
+    TextureTranscoding__UnsignedBc5 = 7,
+    TextureTranscoding__SignedBc5 = 8,
+    TextureTranscoding__UnsignedBc6H = 9,
+    TextureTranscoding__SignedBc6H = 10,
+    TextureTranscoding__Bc7 = 11
+} TextureTranscoding;
+
+typedef enum { // enum ColorProfile::Enum
+    Rec709Linear = 0,
+    Rec709SRgb = 1,
+    Rec709Gamma2 = 2,
+    XvYccLinear = 3
+} ColorProfile;
+
+typedef enum { // TextureDomain::Enum
+    TextureDomain__Wrap = 0,
+    TextureDomain__Clamp = 1,
+    TextureDomain__Mirror = 2
+} TextureDomain;
+
+DXGI_FORMAT TextureContentToTextureFormat(TextureEncoding encoding, TextureTranscoding transcoding, ColorProfile color_profile) { // 142367780
+    if (transcoding <= 1) {
+        if (color_profile == Rec709SRgb) {
+            switch (encoding) {
+            case TextureEncoding__Bc1:
+                return DXGI_FORMAT_BC1_UNORM_SRGB;
+            case TextureEncoding__Bc2:
+                return DXGI_FORMAT_BC2_UNORM_SRGB;
+            case TextureEncoding__Bc3:
+                return DXGI_FORMAT_BC3_UNORM_SRGB;
+            case TextureEncoding__UnsignedBc4:
+                return DXGI_FORMAT_BC4_UNORM;
+            case TextureEncoding__SignedBc4:
+                return DXGI_FORMAT_BC4_SNORM;
+            case TextureEncoding__UnsignedBc5:
+                return DXGI_FORMAT_BC5_UNORM;
+            case TextureEncoding__SignedBc5:
+                return DXGI_FORMAT_BC5_SNORM;
+            case TextureEncoding__Bc7:
+            case TextureEncoding__Bc7_HighQuality:
+                return DXGI_FORMAT_BC7_UNORM_SRGB;
+            case TextureEncoding__R8G8B8A8:
+                return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            }
+        } else {
+            switch (encoding) {
+            case TextureEncoding__Bc1:
+                return DXGI_FORMAT_BC1_UNORM;
+            case TextureEncoding__Bc2:
+                return DXGI_FORMAT_BC2_UNORM;
+            case TextureEncoding__Bc3:
+                return DXGI_FORMAT_BC3_UNORM;
+            case TextureEncoding__UnsignedBc4:
+                return DXGI_FORMAT_BC4_UNORM;
+            case TextureEncoding__SignedBc4:
+                return DXGI_FORMAT_BC4_SNORM;
+            case TextureEncoding__UnsignedBc5:
+                return DXGI_FORMAT_BC5_UNORM;
+            case TextureEncoding__SignedBc5:
+                return DXGI_FORMAT_BC5_SNORM;
+            case TextureEncoding__UnsignedBc6H:
+                return DXGI_FORMAT_BC6H_UF16;
+            case TextureEncoding__SignedBc6H:
+                return DXGI_FORMAT_BC6H_SF16;
+            case TextureEncoding__Bc7:
+            case TextureEncoding__Bc7_HighQuality:
+                return DXGI_FORMAT_BC7_UNORM;
+            case TextureEncoding__R32G32B32A32Float:
+                return DXGI_FORMAT_R32G32B32A32_FLOAT;
+            case TextureEncoding__R16G16B16A16:
+                return DXGI_FORMAT_R16G16B16A16_UNORM;
+            case TextureEncoding__R16G16B16A16Float:
+                return DXGI_FORMAT_R16G16B16A16_FLOAT;
+            case TextureEncoding__R8G8B8A8:
+                return DXGI_FORMAT_R8G8B8A8_UNORM;
+            case TextureEncoding__B5G6R5:
+                return DXGI_FORMAT_B5G6R5_UNORM;
+            case TextureEncoding__B5G5R5A1:
+                return DXGI_FORMAT_B5G5R5A1_UNORM;
+            case TextureEncoding__R8:
+                return DXGI_FORMAT_R8_UNORM;
+            case TextureEncoding__A8:
+                return DXGI_FORMAT_A8_UNORM;
+            case TextureEncoding__R8G8:
+                return DXGI_FORMAT_R8G8_UNORM;
+            }
+        }
+    } else {
+        if (color_profile == Rec709SRgb) {
+            switch (transcoding) {
+            case TextureTranscoding__Bc1:
+                return DXGI_FORMAT_BC1_UNORM_SRGB;
+            case TextureTranscoding__Bc2:
+                return DXGI_FORMAT_BC2_UNORM_SRGB;
+            case TextureTranscoding__Bc3:
+                return DXGI_FORMAT_BC3_UNORM_SRGB;
+            case TextureTranscoding__UnsignedBc4:
+                return DXGI_FORMAT_BC4_UNORM;
+            case TextureTranscoding__SignedBc4:
+                return DXGI_FORMAT_BC4_SNORM;
+            case TextureTranscoding__UnsignedBc5:
+                return DXGI_FORMAT_BC5_UNORM;
+            case TextureTranscoding__SignedBc5:
+                return DXGI_FORMAT_BC5_SNORM;
+            case TextureTranscoding__Bc7:
+                return DXGI_FORMAT_BC7_UNORM_SRGB;
+            }
+        } else {
+            switch (transcoding) {
+            case TextureTranscoding__Bc1:
+                return DXGI_FORMAT_BC1_UNORM;
+            case TextureTranscoding__Bc2:
+                return DXGI_FORMAT_BC2_UNORM;
+            case TextureTranscoding__Bc3:
+                return DXGI_FORMAT_BC3_UNORM;
+            case TextureTranscoding__UnsignedBc4:
+                return DXGI_FORMAT_BC4_UNORM;
+            case TextureTranscoding__SignedBc4:
+                return DXGI_FORMAT_BC4_SNORM;
+            case TextureTranscoding__UnsignedBc5:
+                return DXGI_FORMAT_BC5_UNORM;
+            case TextureTranscoding__SignedBc5:
+                return DXGI_FORMAT_BC5_SNORM;
+            case TextureTranscoding__UnsignedBc6H:
+                return DXGI_FORMAT_BC6H_UF16;
+            case TextureTranscoding__SignedBc6H:
+                return DXGI_FORMAT_BC6H_SF16;
+            case TextureTranscoding__Bc7:
+                return DXGI_FORMAT_BC7_UNORM;
+            }
+        }
+    }
+    return DXGI_FORMAT_UNKNOWN;
+}
+
+string DxgiFormatToString(DXGI_FORMAT f) {
+    local string s;
+    SPrintf(s, "%s (%d)", EnumToString(f), f);
+    return s;
+}
+
+typedef enum<uint> {
+    Wrap = 1,
+    Mirror = 2,
+    Clamp = 3,
+    Border = 4,
+    MirrorOnce = 5
+} TextureAddress;
+
+string NameHashToString(uint hash) { // CRC-32
+    switch (hash) {
+    // float4 - ParameterConstantBuffer
+    case 0xEA718FBE: // carpaint_standard
+        return "UniqueBaseColorColorParam";
+    case 0x0014A502:
+        return "PaintColorGroupColorParam";
+    case 0xC0CB2820:
+        return "PaintColorColorParam";
+    case 0xA415641F:
+        return "PaintFlakeF0Vector4";
+    case 0x3FA9F5C9:
+        return "PaintFinishColorParam";
+    case 0x1BB17DD2:
+        return "radColour1ColorParam_pg_radiosity";
+    case 0x43AFD4FA:
+        return "radColour2ColorParam_pg_radiosity";
+    case 0xC28AB1DD:
+        return "radColour3ColorParam_pg_radiosity";
+        
+    case 0x003E4460: // carpaint_standard_glossmask
+        return "PaintFinishBColorParam";
+        
+    case 0x63040D89: // badge_clc_diffusemetallerpch1masknorm
+        return "DiffuseColorColorParam";
+    case 0x1F9B6488:
+        return "F0aVector4";
+    case 0x9114636B:
+        return "F0bVector4";
+    case 0x23C8B47A:
+        return "ClearCoatF0Vector4";
+        
+    case 0xF51639BE: // badge_ch1difnormglossao
+        return "DiffuseColorGroupColorParam";
+    case 0x0E29312A:
+        return "ReflectionTintColorParam";
+        
+    case 0x57C321A6: // simplediffuse
+        return "ColorColorParam";
+    case 0x938926B0:
+        return "F0Vector4";
+        
+    case 0x73A9E2DF: // clc_metalch2normalch1mask
+        return "ColorGroupColorParam";
+    case 0x0B379E68:
+        return "CarbonClearCoatColorParam";
+    case 0xC308C931:
+        return "IlluminationColoColorParam";
+        
+    case 0x1F3EB7A9: // ch1diffnormglossalphaemissive
+        return "DiffTintColorParam";
+        
+    case 0x9BCED46E: // m_ch2normglossalphaemissive
+        return "IlluminationColorColorParam";
+        
+    case 0xEF5CCE09: // ch2diffnormglossalphaemissive
+        return "DiffuseColorAColorParam";
+    case 0x76BEA808:
+        return "DiffuseColorBColorParam";
+        
+    case 0xC017A27E: // ch1ch2normlerpch1glossdiff
+        return "ReflectionTintColorColorParam";
+        
+    case 0x8467AAA4: // car_window_interior
+        return "g_CarUserColor0";
+    case 0x1F30F777:
+        return "GlassColor0ColorParam";
+    case 0x108D7FE5:
+        return "CrackF0Vector4";
+        
+    // float2
+    case 0x1CE52912: // carpaint_standard
+        return "OrangePeelTiling";
+    case 0x8ED8D865:
+        return "FlakeNormalTiling";
+        
+    case 0x46E92CB5: // badge_clc_diffusemetallerpch1masknorm
+        return "CH1MaskTiling";
+    case 0x730F2086:
+        return "NormalTiling";
+        
+    case 0xC19C70CD: // badge_ch1difnormglossao
+        return "DiffuseATiling";
+    case 0x3EC91ED5:
+        return "GlossTiling";
+    case 0xCB4FD76E:
+        return "RTintTiling";
+    case 0x75D6E294:
+        return "LocalAOTiling";
+        
+    case 0x519B26A1: // clc_metalch2normalch1mask
+        return "CH2DiffuseTextureTiling";
+    case 0x53372732:
+        return "CH2RTintTiling";
+    case 0xB879D9F0:
+        return "LightMapTiling";
+        
+    case 0x7495F9AC: // ch1diffnormglossalphaemissive
+        return "AlphaTiling";
+        
+    case 0x8591411B: // ch1ch2normlerpch1glossdiff
+        return "CH1GlossDiffMaskTiling";
+    case 0x114A45A9:
+        return "CH2NormalTiling";
+    case 0xAC802967:
+        return "CH1NormalTiling";
+    case 0x0222B0B9:
+        return "CH1NormalMaskTiling";
+    case 0x2F354D91:
+        return "AOTiling";
+        
+    case 0x548284FC: // car_cf_embossed_interior
+        return "CH1_CLCNormalMap0Tiling";
+        
+    // float
+    case 0x74226C85: // carpaint_standard
+        return "BaseCoatScalar_floatVal";
+    case 0xA2896771:
+        return "stepMinRimSideAngle_floatVal_surfaceFX_snow_surfaceFX";
+    case 0x193593DA:
+        return "stepMaxRimSideAngle_floatVal_surfaceFX_snow_surfaceFX";
+    case 0x8CF21130:
+        return "lerpMinRimSideAngle_floatVal_surfaceFX_snow_surfaceFX";
+    case 0x374EE59B:
+        return "lerpMaxRimSideAngle_floatVal_surfaceFX_snow_surfaceFX";
+    case 0x8EDE2B71:
+        return "stepMinRimMask_floatVal_surfaceFX_snow_surfaceFX";
+    case 0xB893E9E2:
+        return "stepMaxRimMask_floatVal_surfaceFX_snow_surfaceFX";
+    case 0x86EF8FB1:
+        return "FlakeAmount_floatVal";
+    case 0x3F770DFC:
+        return "CH1NormalHeightScale";
+    case 0xA49CC530:
+        return "OrangePeelHeightScale";
+    case 0xC8C003A0:
+        return "RainUVScale_floatVal_basewaterbeading_uvrot0";
+    case 0x33E9FD2B:
+        return "DirectionalFalloff_Offset_floatVal_basewaterbeading_uvrot0";
+    case 0xB7BB947A:
+        return "DirectionalFalloff_Tightness_floatVal_basewaterbeading_uvrot0";
+    case 0x99CC69B1:
+        return "FlakeGloss_floatVal";
+    case 0x2A57C2B6:
+        return "FlakeNormalIntensity_floatVal";
+    case 0x18F91688:
+        return "PaintType_floatVal";
+    case 0x8F88A8DD:
+        return "radEV1_floatVal_pg_radiosity";
+    case 0xF96D91E0:
+        return "radEV2_floatVal_pg_radiosity";
+    case 0x621E7B34:
+        return "radEV3_floatVal_pg_radiosity";
+        
+    case 0xD6B74780: // carpaint_standard_glossmask
+        return "FlakeAmountB_floatVal";
+    case 0xA75C82D2:
+        return "RainUVScale_floatVal_basewaterbeading";
+    case 0x2C6CEF66:
+        return "DirectionalFalloff_Offset_floatVal_basewaterbeading";
+    case 0xA9383667:
+        return "DirectionalFalloff_Tightness_floatVal_basewaterbeading";
+    case 0xD6A86466:
+        return "FlakeGlossB_floatVal";
+        
+    case 0xBB022974: // badge_clc_diffusemetallerpch1masknorm
+        return "NormalHeightScale";
+    case 0x52E99DA3:
+        return "GlossA_floatVal";
+    case 0xB9DE26A0:
+        return "GlossB_floatVal";
+    case 0x7E88DE7D:
+        return "ClearCoatGloss_floatVal";
+        
+    case 0x00CE7933: // badge_ch1difnormglossao
+        return "NormalSpecPower";
+    case 0x7A549CB2:
+        return "DiffuseDarkeningMaxPorosity_floatVal_basewaterbeading_nonclearcoat";
+        
+    case 0x5FF94E67: // simplediffuse
+        return "Gloss_floatVal";
+        
+    case 0x18385024: // clc_metalch2normalch1mask
+        return "RainUVScale_floatVal_basewaterbeading_uvrot";
+    case 0xE58ABE7B:
+        return "DirectionalFalloff_Offset_floatVal_basewaterbeading_uvrot";
+    case 0x09A23168:
+        return "DirectionalFalloff_Tightness_floatVal_basewaterbeading_uvrot";
+    case 0x2DB53178:
+        return "FlakeGlossDmg_floatVal";
+    case 0x6F45C5F1:
+        return "EmissiveType_floatVal";
+    case 0x1364DE85:
+        return "pgModEV_floatVal";
+    case 0xF9F19BA6:
+        return "PartDamageThreshold_floatVal";
+        
+    case 0x495BB2FB: // ext_grille
+        return "UVRotation_floatVal";
+        
+    case 0xB0B8947E: // m_ch2normglossalphaemissive
+        return "uTile_floatVal";
+    case 0xCCD9B1A5:
+        return "vTile_floatVal";
+        
+	case 0xD5F1D09E: // ch1ch2normlerpch1glossdiff
+		return "CH2NormalHeightScale";
+        
+	case 0xF94165FE: // car_cf_embossed_interior
+		return "CH1_CLCNormalMap0HeightScale";
+        
+	case 0x8F731786: // car_cf_embossed_interior
+		return "RainUVScale_floatVal_basewaterbeading_interior";
+	case 0x6F3A994F:
+		return "AllowUseColorBool";
+        
+    // int
+    case 0x5393C778: // carpaint_standard
+        return "radFunction1CarLightParam_pg_radiosity";
+    case 0xE007EABB:
+        return "radFunction2CarLightParam_pg_radiosity";
+    case 0x8E8BF1FA:
+        return "radFunction3CarLightParam_pg_radiosity";
+        
+    case 0x493073A0: // clc_metalch2normalch1mask
+        return "LightFunctionCarLightParam";
+        
+    // bool
+    case 0x9615CAAA: // carpaint_standard
+        return "UniqueBaseTextureSwitchBool";
+    case 0x78004A9C:
+        return "ColorGroupSwitchBool";
+    case 0xD047A271:
+        return "UseDiffuseAlphaBool";
+    case 0x7169AC81:
+        return "CH1DiffuseTextureSwitchBool";
+    case 0xE1D827FD:
+        return "UniqueBaseColorSwitchBool";
+    case 0xFF73057F:
+        return "LiverySwitchBool";
+    case 0x9A8DF740:
+        return "DamageSwitchBool";
+    case 0x61730CD3:
+        return "ScrapeSwitchBool";
+    case 0xF03E432F:
+        return "FlakeMaskSwitchBool";
+    case 0x76C4A90E:
+        return "CH1NormalSwitchBool";
+    case 0xE159D67B:
+        return "CH1AlphaSwitchBool";
+        
+    case 0xE4AAD859: // carpaint_standard_glossmask
+        return "FlakeGlossMaskBool";
+    case 0x9554D18D:
+        return "GlossMaskSwitchBool";
+        
+    case 0x05A401E7: // badge_clc_diffusemetallerpch1masknorm
+        return "DiffuseTextureSwitchBool";
+    case 0x08B2C17F:
+        return "CH1MaskSwitchBool";
+    case 0xCBB3D988:
+        return "CH1OpacitySwitchBool";
+        
+    case 0x04F8F9FA: // badge_ch1difnormglossao
+        return "CH1DiffColTextureSwitchBool";
+    case 0x0F70E9CC:
+        return "RTintMaskSwitchBool";
+    case 0x71263EB7:
+        return "CH1F0MaskSwitchBool";
+    case 0x5A0DA36A:
+        return "CH1GlossMaskSwitchBool";
+    case 0xE876DDCC:
+        return "CH1LocalAOSwitchBool";
+    case 0xFE5BAD37:
+        return "CH1LocalAOSwitch0Bool";
+    case 0xA6BF15E8:
+        return "CH1OpacityMaskSwitchBool";
+        
+    case 0x4E3A085E: // clc_metalch2normalch1mask
+        return "RTintTextureSwitchBool";
+    case 0x6C03F944:
+        return "LocalAOSwitchBool";
+    case 0x255EF28A:
+        return "CH2NormalSwitchBool";
+    case 0x07ACB91F:
+        return "RGBMapSwitchBool";
+    case 0x0BF3318B:
+        return "EmissiveOnOffBool";
+    case 0xE5BC49CB:
+        return "AlphaSwitchBool";
+
+    case 0x989B026F: // ext_grille
+        return "MetalSwitchBool";
+    case 0x7487EB77:
+        return "FillSwitchBool";
+        
+    case 0x553D641D: // ch1diffnormglossalphaemissive
+        return "CH1NormalMapSwitchBool";
+        
+    case 0x6F80D6E1: // m_ch2normglossalphaemissive
+        return "CH2RTintMaskSwitchBool";
+    case 0x22BC6533:
+        return "CH2F0MaskSwitchBool";
+    case 0xFA9429D7:
+        return "CH2NormalMapSwitchBool";
+    case 0xF5A4EEA0:
+        return "CH2GlossMaskSwitchBool";
+    case 0x02F000AE:
+        return "CH2LocalAOSwitchBool";
+    case 0x2B935F14:
+        return "CH2DirectAOSwitchBool";
+    case 0x9FC7B8A8:
+        return "CH2OpacityMaskSwitchBool";
+        
+    case 0x6FA53B68: // ch2diffnormglossalphaemissive
+        return "CH2DiffuseLERPSwitchBool";
+        
+	case 0x56DD9628: // ch1ch2normlerpch1glossdiff
+		return "CH1DiffuseLERPSwitchBool";
+	case 0x88C5D9BD:
+		return "CH1DirectAOSwitchBool";
+    
+    case 0x48287560: // car_cf_embossed_interior
+        return "ClearCoatNormalSwitch0Bool";
+    case 0x22819153:
+        return "DialRadiositySwitchBool_dialRadiosity";
+        
+    // SRV Texture
+    case 0x66E53F62: // carpaint_standard
+        return "CH1AlphaTextureTexture";
+    case 0x10350BBC:
+        return "CH1DiffuseTextureTexture";
+    case 0x5BB7DA76:
+        return "CH1NormalTexture";
+    case 0xB59BE3AB:
+        return "FlakeNormalTexture";
+    case 0x8F186353:
+        return "HighNoiseTextureTexture_surfaceFX_snow_surfaceFX";
+    case 0x26169D54:
+        return "LowNoiseTextureTexture_surfaceFX_snow_surfaceFX";
+    case 0x8B653400:
+        return "MudTileDirectionalLeftTexture_surfaceFX_opus_surfaceFX";
+    case 0x154A5458:
+        return "MudTileNonDirectionalTexture_surfaceFX_opus_surfaceFX";
+    case 0x5F37B059:
+        return "NormalMapWithIntensityTexture";
+    case 0xD7D2D75D:
+        return "NormalMapWithIntensityTexture_surfaceFX_opus_surfaceFX";
+    case 0x8382A669:
+        return "NormalMapWithIntensityTexture_surfaceFX_snow_surfaceFX";
+    case 0x7B683AC5:
+        return "OrangePeelTexture";
+    case 0x99EE46B6:
+        return "radTextureTexture_pg_radiosity";
+    case 0x9D396DAD:
+        return "SnowDiffuseTextureTexture_surfaceFX_snow_surfaceFX";
+    case 0xCA80B33B:
+        return "TexLowFrequencyNoiseTexture_surfaceFX_opus_surfaceFX";
+    case 0x16F462B7:
+        return "TextureTexture";
+    case 0x05EECB86:
+        return "TextureWetnessEdgeTexture_surfaceFX_opus_surfaceFX";
+    case 0x51BEBAB2:
+        return "TextureWetnessEdgeTexture_surfaceFX_snow_surfaceFX";
+        
+    case 0x3380008B: // badge_clc_diffusemetallerpch1masknorm
+        return "CH1MaskTexture";
+    case 0x6DD98CD9:
+        return "DiffuseATexture";
+    case 0x8C658791:
+        return "NormalTexture";
+        
+    case 0x7E4A41E1: // badge_ch1difnormglossao
+        return "GlossTexture";
+    case 0x7FDA2F1B:
+        return "LocalAOTexture";
+    case 0x220CAD2C:
+        return "RTintTexture";
+        
+    case 0x57D9D49E: // clc_metalch2normalch1mask
+        return "AlphaTexture";
+    case 0x294DA6FC:
+        return "CH2DiffuseTextureTexture";
+    case 0x4049C803:
+        return "CH2RTintTexture";
+    case 0x35C82561:
+        return "LightMapTexture";
+    case 0x64C94C50:
+        return "SplatterYTexture";
+        
+    case 0x043E9751: // ch2diffnormglossalphaemissive
+        return "GlossVariationMapTexture";
+        
+	case 0x0FEA383B: // ch1ch2normlerpch1glossdiff
+		return "AOTexture";
+	case 0x022DF609:
+		return "CH1GlossDiffMaskTexture";
+	case 0x3A72873C:
+		return "CH1NormalMaskTexture";
+	case 0x27D6FFAD:
+		return "CH2NormalTexture";
+    
+    case 0x3C929217: // car_cf_embossed_interior
+        return "CH1_CLCNormalMap0Texture";
+    
+    case 0xA27F63E2: // car_window_interior
+        return "ShatterMapTexture";
+        
+    // Sampler
+    case 0xF01369AD: // carpaint_standard
+        return "SamplerStatesLiverySampler";
+    case 0x41359340:
+        return "SamplerStatesSampler_pg_radiosity";
+    case 0xB74664B2:
+        return "SamplerStatesSampler_surfaceFX";
+        
+    case 0xEEACBDFB: // badge_clc_diffusemetallerpch1masknorm
+        return "pgSamplerStatesSampler";
+        
+    //case 0xF1163FB5: // badge_ch1difnormglossao
+    //    return ""; // unknown
+        
+    case 0xA8B882A2: // ch2diffnormglossalphaemissive
+        return "SamplerStatesSampler";
+    
+    case 0x80846FBD: // car_cf_embossed_interior
+        return "SamplerStatesSampler_dialRadiosity";
+    }
+    //local string s;
+    //SPrintf(s, "%08X", hash);
+    //return s;
+    return "";
+}
+
+typedef struct (Version &blob_version) {
+    local int64 meta_data_base_pos = FTell();
+    
+    struct MetaDataHeader { // Bundle::MetaDataHeader
+        uint32 tag <format=hex, bgcolor=cBlue>; // m_Tag
+        uint16 version : 4; // m_Version
+        uint16 data_size : 12; // m_Length
+        uint16 data_offset <format=hex>; // m_Offset
+        //Printf("  %s %d\n", TagToString(tag), version);
+    } header <read=Str("v%d", version)>;
+    
+    FSeek(meta_data_base_pos + header.data_offset);
+    switch (header.tag) {
+    case TAG_METADATA_Name:
+        // 0 initial - FM5; FH2, FH3, FH5
+        if (header.version > 0) {
+            Printf("Warning: Unsupported 'Name' metadata version. Found: %d. Max supported: 0.\n", header.version);
+        }
+        if (header.data_size > 0) {
+            char data[header.data_size]; // std::string
+        } else {
+            local string data = "<none>";
+        }
+        break;
+    case TAG_METADATA_Id:
+        // 0 initial - FM5; FH2, FH3, FH5
+        if (header.version > 0) {
+            Printf("Warning: Unsupported 'Id  ' metadata version. Found: %d. Max supported: 0.\n", header.version);
+        }
+        int data; // long
+        break;
+    case TAG_METADATA_BoundingBox:
+        // 0 initial - FM5; FH2, FH3, FH5
+        if (header.version > 0) {
+            Printf("Warning: Unsupported 'BBox' metadata version. Found: %d. Max supported: 0.\n", header.version);
+        }
+        struct AABB {
+            DirectX_XMFLOAT3 min;
+            DirectX_XMFLOAT3 max;
+        } data; // class AABB
+        break;
+    case TAG_METADATA_ATST:
+        // 1 initial - FM2023; FH2, FH3
+        // 2 add unk_v2 - FH5
+        if (header.version > 2) {
+            Printf("Warning: Unsupported 'ATST' metadata version. Found: %d. Max upported: 2.\n", header.version);
+        }
+        if (header.version < 1) {
+            Printf("Warning: Unsupported 'ATST' metadata version. Found: %d. Min supported: 2.\n", header.version);
+        }
+        Boolean unk; // bool
+        if (header.version >= 2) {
+            Boolean unk_v2; // bool
+        }
+        break;
+    case TAG_METADATA_BLEN: // boolean enable?, blend?
+        // 1 initial - FH3, FH5
+        if (header.version != 1) {
+            Printf("Warning: Unsupported 'BLEN' metadata version. Found: %d. Supported: 1.\n", header.version);
+        }
+        Boolean unk; // bool
+        Boolean unk; // bool
+        break;
+    case TAG_METADATA_VDCL:
+        // 1 initial
+        // 2 add unk_v2 - FH3
+        // 3 add unk_v2_length_v3 - FH4, FH5
+        if (header.version > 3) {
+            Printf("Warning: Unsupported 'VDCL' metadata version. Found: %d. Max supported: 3.\n", header.version);
+        }
+        if (header.version < 1) {
+            Printf("Warning: Unsupported 'VDCL' metadata version. Found: %d. Min supported: 1.\n", header.version);
+        }
+        if (header.version >= 2) {
+            local int unk_v2_length = 1;
+            if (header.version >= 3) {
+                int unk_v2_length_v3; // int
+                unk_v2_length = unk_v2_length_v3;
+            }
+            struct {
+                int unk_v2_length; // int
+                struct {
+                    uint name_hash <comment="light_scenario.name", format=hex>; // unsigned long; "CarShadowDepthLightScenario" = 0xDBB1C7AA
+                    uint unk <format=hex>; // unsigned long; color?
+                } unk_v2[unk_v2_length];
+            } unk_v2[unk_v2_length] <optimize=false>;
+        }
+        break;
+    case TAG_METADATA_TextureReferences:
+        // 0 initial - FM5; FH2, FH3, FH5
+        if (header.version > 0) {
+            Printf("Warning: Unsupported 'TRef' metadata version. Found: %d. Max supported: 0.\n", header.version);
+        }
+        uint texture_path_hashes_length; // unsigned long count;
+        uint texture_path_hashes[texture_path_hashes_length] <format=hex, comment=".swatchbin path CRC-32 lowercase">; // std::vector<unsigned long>
+        break;
+    case TAG_METADATA_ACMR:
+        if (header.version > 0) {
+            Printf("Warning: Unsupported 'ACMR' metadata version. Found: %d. Max supported: 0.\n", header.version);
+        }
+        float average_cache_miss_ratio;
+        break;
+    case TAG_METADATA_TextureContentHeader: // reader: 142369AC8, 14236BC04, 14236C01C; writer: 142370144
+        if (IsVersion(blob_version, 2, 0)) { // TextureContent2, Durango
+            struct TextureContent2 {
+                GUID id; // _GUID m_Id; instead of "<unnamed>"
+                uint16 width; // m_Width
+                uint16 height; // m_Height
+                uint16 depth; // m_DepthOrSlice
+                uint16 width_unused; // m_TileRelativeWidth
+                uint16 height_unused; // m_TileRelativeHeight
+                uint16 depth_unused; // m_TileRelativeDepthOrSlice
+                uint8 mip_levels; // m_NumMips
+                uint8 mip_levels_unused; // m_TileRelativeMipLevels
+                uint8 gap1E; // m_TileRelativeMipOffset; base mip level?
+                uint32 tile_mode : 5; // m_TileMode; x & 0x1F, 14236BD28; XG_TILE_MODE
+                TextureEncoding encoding : 6; // m_Encoding
+                TextureTranscoding transcoding : 6; // m_Transcoding
+                ColorProfile color_profile_unused : 3; // m_EncodedColorProfile; (x >> 17) & 0x7, 14236BD13
+                ColorProfile color_profile : 3; // m_TargetColorProfile
+                TextureDomain domain : 2; // m_Domain
+                uint32 is_texture_cube : 1; // m_IsCubeMap; (1 << 25), 14236CDAB; name: 142355508
+                uint32 is_texture_3d : 1; // m_Is3DTexture; (1 << 26), 1423535D6; name: 1423554FE
+                uint32 is_premultiplied_alpha : 1; // m_IsPremultipliedAlpha; (1 << 27), 14236C23C
+                uint32 log_pitch_or_linear_size: 4 <comment=Str("0x%08X", 1 << (this + 4))>; // m_BaseAlignment; (1 >> 28), 14236BD33; PitchOrLinearSize = 1 << (value + 4)
+            } data <comment=Str("Format: %s", DxgiFormatToString(TextureContentToTextureFormat(encoding, transcoding, color_profile)))>; // Durango, Xbox One; struct TextureContent2
+        } else {
+            struct {
+                local int64 base = FTell();
+                
+                uint32 meta_data_fixup_offset; // Bundle::FixupPointers()
+                uint32 blob_data_fixup_offset;
+                struct TextureContent {
+                    GUID id; // 0; _GUID m_Id;
+                    uint32 width; // 10; m_Width; 14236D178
+                    uint32 height; // 14; m_Height
+                    uint32 depth; // 18; m_Depth
+                    uint16 slices_length : 14; // 1C; m_NumSlices; D3D12_RESOURCE_DESC.DepthOrArraySize
+                    uint16 platform : 2; // 1C; m_Platform
+                    uint8 mips_length; // 1E; m_NumMips
+                    uint8 is_texture_cube : 1; // 1F; m_IsCubeMap; 14236D1D7, 142355646
+                    uint8 is_premultiplied_alpha : 1; // 1F; FH3 OpusDev 14236C2FE
+                    uint8 __padding__ : 6; // 1F; & 0xFC, 142370308
+                    TextureTranscoding transcoding; // m_Transcoding
+                    ColorProfile color_profile_unused; // m_EncodedColorProfile
+                    ColorProfile color_profile; // m_TargetColorProfile
+                    TextureDomain domain; // 2C; m_Domain
+                    struct PointerFixup {
+                        uint32 offset; // m_Offset
+                        uint32 next; // m_Next; the 1st pass only, not used later
+                    } slices_ptr; // reader: 1423542CF
+
+                    local int64 p = FTell();
+                    FSeek(base + slices_ptr.offset);
+                    struct TextureContentSlice {
+                        TextureEncoding encoding;
+                        PointerFixup mips_ptr;
+
+                        local int64 p = FTell();
+                        FSeek(base + mips_ptr.offset);
+                        struct TextureContentMip {
+                            uint32 blob_size; // m_BlobSize
+                            PointerFixup blob_ptr; // relative to TXCB data begin
+                        } mips[mips_length];
+                        FSeek(p);
+
+                        local DXGI_FORMAT format = TextureContentToTextureFormat(encoding, transcoding, color_profile);
+                    } slices[slices_length] <comment=Str("Format: %s", DxgiFormatToString(format)), optimize=false>;
+                    FSeek(p);
+                } texture_content;
+            } data; // PC
+        }
+        break;
+    default:
+        ubyte data[header.data_size];
+        break;
+    }
+} MetaData <read=TagToString(header.tag), comment=MetaDataToString>;
+
+string MetaDataToString(MetaData &value) {
+    local string tag = TagToString(value.header.tag);
+    switch (tag) {
+    case "TXCH":
+        return "TeXture Content Header";
+    case "TRef":
+        return "Texture References";
+    default:
+        return "";
+    }
+}
+
+struct Bundle;
+
+typedef struct {
+    struct BlobHeader {
+        uint32 tag <format=hex, bgcolor=cPurple>; // m_Tag
+        Version version; // m_VersionMajor, m_VersionMinor
+        //Printf(" %s %d.%d\n", TagToString(tag), version.major, version.minor);
+        uint16 metadata_count; // m_MetaDataCount
+        uint32 metadata_offset <format=hex>; // m_MetaDataOffset
+        uint32 data_offset <format=hex>; // m_BlobOffset
+        uint32 data_size_unused <format=hex>; // m_CompressedLength
+        uint32 data_size <format=hex>; // m_UncompressedLength
+    } header <read=Str("v%s", VersionToString(version))>; // Bundle::BlobHeader
+    
+    local int i;
+    for (i = 0; i < header.metadata_count; i++) {
+        FSeek(bundle_base_pos + header.metadata_offset + i * 0x8);
+        MetaData metadata(header.version) <optimize=false>;
+    }
+    
+    FSeek(bundle_base_pos + header.data_offset);
+    switch (header.tag) {
+    case TAG_BLOB_Skeleton:
+        // 0.0 initial - FM5; FH2
+        // 1.0 add unk__v1_0 - FM6Apex, FM2023; FH3, FH5
+        if (!IsAtMostVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported 'Skel' blob version. Found: %s. Max supported: 1.0\n", VersionToString(header.version));
+        }
+        struct {
+            //local int bone_index;
+            ushort bones_length; // unsigned short
+            struct {
+                String name; // std::string
+                short parent_index; // short; Left-child right-sibling representation
+                short child_index; // short
+                short next_index; // short
+                DirectX_XMMATRIX transform; // void *
+                //Printf("%d\t%d\t%d\t%s(%d)\n", ParentIndex, ChildIndex, NextIndex, Name.Data, bone_index);
+                //bone_index++;
+                //Printf("%f %f %f %f\n%f %f %f %f\n%f %f %f %f\n%f %f %f %f\n", Matrix4[0], Matrix4[1], Matrix4[2], Matrix4[3], Matrix4[4], Matrix4[5], Matrix4[6], Matrix4[7], Matrix4[8], Matrix4[9], Matrix4[10], Matrix4[11], Matrix4[12], Matrix4[13], Matrix4[14], Matrix4[15]);
+                //Printf("%d,%d,%d,%s,\"%f %f %f %f\n%f %f %f %f\n%f %f %f %f\n%f %f %f %f\"\n", ParentIndex, ChildIndex, NextIndex, Name.Data, Matrix4[0], Matrix4[1], Matrix4[2], Matrix4[3], Matrix4[4], Matrix4[5], Matrix4[6], Matrix4[7], Matrix4[8], Matrix4[9], Matrix4[10], Matrix4[11], Matrix4[12], Matrix4[13], Matrix4[14], Matrix4[15]);
+            } bones[bones_length] <comment=name.data, optimize=false>;
+            
+            if (IsAtLeastVersion(header.version, 1, 0)) { // FH3 OpusProfile 142AE00B5
+                uint unk__v1_0_length; // unsigned long
+                if (unk__v1_0_length > 0) {
+                    ubyte unk__v1_0[unk__v1_0_length]; // void *
+                }
+            }
+        } skeleton_blob; // name: skeletonBlob
+        break;
+    case TAG_BLOB_MorphTable:
+        // 0.0 initial - FM5, FM2023; FH2, FH3, FH5
+        struct {
+            short strings_length;
+            String strings[strings_length] <optimize=false>;
+        } morph_blob; // name: morphBlob; LoadMorphTable(Bundle::BlobReader *, std::map<std::string, short> *)
+        break;
+    case TAG_BLOB_MaterialInstance: // CommonModel::StaticVector<CommonModel::MaterialMapEntry> m_MaterialEntries
+        // 1.0 initial - FM5, FM2023; FH2, FH3, FH5
+        Bundle material_instance_bundle; // MaterialSystem::MaterialInstance::Load()
+        break;
+    case TAG_BLOB_MATI:
+        // 1.0 initial - FM5, FM2023; FH2, FH3, FH5
+        struct {
+            _7BitString path;
+            //Printf("%s %s\n", metadata[0].Name, Path.data);
+        } material_instance_blob; // name: matBlob; MaterialSystem::MaterialInstance::ReadMaterialInstanceBlob()
+        break;
+    case TAG_BLOB_MATL:
+        // 1.0 initial - FM2023; FH3
+        // 1.1
+        // 1.2
+        struct {
+            _7BitString path;
+            
+            if (IsAtLeastVersion(header.version, 1, 1)) {
+                _7BitString path__v1_1;
+            }
+            
+            if (IsAtLeastVersion(header.version, 1, 2)) {
+                _7BitString path__v1_2;
+            }
+        } material_blob; // Material::ReadMaterialBlob()
+        break;
+    case TAG_BLOB_DefaultShaderParameter:
+    case TAG_BLOB_MaterialShaderParameter:
+        // 1.0 initial
+        // 2.0 - FM5, FM2023; FH2, FH3
+        // 2.1 change length type from ubyte to ushort - FH5
+        if (!IsAtMostVersion(header.version, 2, 1)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Max supported: 2.1\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        if (!IsAtLeastVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Min supported: 1.0\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        struct {
+            if (IsAtLeastVersion(header.version, 2, 1)) {
+                ushort length; // ReadData(2)
+            } else {
+                ubyte length; // ReadData(1)
+            }
+            if (length > 0) {
+                if (IsAtLeastVersion(header.version, 2, 0)) {
+                    local int i = 0;
+                    struct ShaderParameter {
+                        // 1.0 initial
+                        // 3.0 add guid__v3_0 - FM2023; FH3
+                        // 3.1 add unk__v3_1 - FH5
+                        Version parameter_version; // ReadData(1) x2
+                        if (!IsAtMostVersion(parameter_version, 3, 1)) {
+                            Printf("Warning: Unsupported 'DFPR' blob parameter version. Found: %s. Max supported: 3.1\n", VersionToString(parameter_version));
+                        }
+                        if (!IsAtLeastVersion(parameter_version, 2, 0)) {
+                            Printf("Warning: Unsupported 'DFPR' blob parameter version. Found: %s. Min supported: 2.0\n", VersionToString(parameter_version));
+                        }
+                        struct {
+                            uint hash <format=hex, comment="CRC-32 of parameter name, case-sensitive">; // unsigned long
+                            if (header.tag == TAG_BLOB_MaterialShaderParameter && NameHashToString(hash) == "") {
+                                // '^.*\t(.{8}) (.*)$' -> 'case 0x\1:\n    return "\2";'
+                                Printf("%08X %08X\n", hash, FTell());
+                            }
+                        } name <read=NameHashToString(hash), write=0>;
+                        
+                        if (IsAtLeastVersion(parameter_version, 3, 1)) {
+                            Boolean has_unk__v3_1; // bool
+                            if (has_unk__v3_1) {
+                                uint unk__v3_1; // unsigned long
+                            }
+                        }
+                        
+                        ShaderParameterType type; // unsigned char
+                        
+                        if (IsAtLeastVersion(parameter_version, 3, 0)) {
+                            GUID guid__v3_0; // ReadData(16); MTPR.guid__v3_0 == DFPR.guid__v3_0
+                        }
+                        
+                        switch (type) {
+                        case ShaderParameter_Swizzle:
+                            //ubyte unk[16]; // ReadData(16); Float4; calls ShaderParameter_Vector serialize
+                            Printf("SwizzleShaderParameter\n");
+                            //break;
+                        case ShaderParameter_Color:
+                            //Color value; // ReadData(16); calls ShaderParameter_Vector serialize
+                            //break;
+                        case ShaderParameter_FunctionRange:
+                            //ubyte unk[16]; // ReadData(16); Float4; calls ShaderParameter_Vector serialize
+                            //break;
+                        case ShaderParameter_Vector:
+                            DirectX_XMFLOAT4 value; // ReadData(16)
+                            break;
+                        case ShaderParameter_Float: // ShaderParameterType::Float
+                            float value; // ReadData(4)
+                            break;
+                        case ShaderParameter_Bool: // ShaderParameterType::Boolean
+                            Boolean4 value; // ReadData(4)
+                            break;
+                        case ShaderParameter_Int: // ShaderParameterType::Int
+                            int value; // ReadData(4)
+                            break;
+                        case ShaderParameter_Texture2D:
+                            struct {
+                                _7BitString path;
+                                
+                                if (IsAtLeastVersion(parameter_version, 2, 0)) {
+                                    uint path_hash <comment="lowercase, CRC-32", format=hex>; // unsigned_long
+                                }
+                                //Printf("%08X\t%s\n", NameHash, Path.Data);
+                            } value;
+                            break;
+                        case ShaderParameter_Sampler:
+                            TextureAddress address_u; // ReadData(4)
+                            TextureAddress address_v; // ReadData(4)
+                            
+                            if (IsAtLeastVersion(parameter_version, 1, 1)) {
+                                //ubyte unk__v1_1[4]; // ReadData(4); type?
+                                enum {
+                                    SamplerStates0Sampler = 0,
+                                    TextureStateSampler = 1,
+                                    SamplerStates1Sampler = 2,
+                                    SamplerStatesSampler = 3,
+                                    SamplerStatesLiverySampler = 4,
+                                    pgSamplerStatesSampler = 6
+                                } unk__v1_1;
+                            }
+                            break;
+                        case ShaderParameter_ColorGradient:
+                            uint unk_length; // ReadData(4)
+                            uint unk[unk_length]; // _BYTE[unk_length * 32 / 8]; DXGI_FORMAT_R8G8B8A8_UNORM; Texture
+                            break;
+                        case ShaderParameter_Vector2: // ShaderParameterType::Float2
+                            struct {
+                                DirectX_XMFLOAT2 value; // ReadData(8)
+                                
+                                if (!IsAtLeastVersion(parameter_version, 2, 0)) { // removed since v2.0
+                                    ubyte unk__v1_0[8]; // ReadData(8)
+                                }
+                            } value;
+                            break;
+                        }
+                        //Printf("%s %s\n", exists(metadata) ? metadata[0].Name : "-", EnumToString(Type));
+                        //Printf("%d %08X %s\n", i, NameHash, EnumToString(Type));
+                        //Printf("%d %s\n", i, NameHashToString(Name.Hash));
+                        i++;
+                    } shader_parameter[length] <comment=EnumToString(type), optimize=false>;
+                } else {
+                     Printf("Warning: 'DFPR' blob parameter version below v2.0 is not supported.\n");
+                }
+                
+                if (header.tag == TAG_BLOB_MaterialShaderParameter && IsAtLeastVersion(header.version, 2, 0)) {
+                    uint unk <format=hex>; // unsigned long
+                    uint unk <format=hex>; // unsigned long
+                    uint unk; // unsigned long
+                }
+            }
+        } shader_parameter_blob; // MaterialSystemObject::ReadShaderParameterBlob
+        break;
+    case TAG_BLOB_Mesh:
+        // 1.0 initial
+        // 1.1 add unk__v1_1
+        // 1.2 add skinning_elements_count, morph_weights_count
+        // 1.3 add unk__v1_3
+        // 1.4 add morph_data_buffer_id, skinning_data_buffer_id
+        // 1.5 add texcoord_transform
+        // 1.6 add average_cache_miss_ratio, vertices_count
+        // 1.7 add not_opaque and not_transparent to render_pass bitfield - FM5; FH2
+        // 1.8 add position_scale, position_translate - FM2023; FH3
+        // 1.9 replace material_id with material_ids[4] - FH4, FH5
+        if (!IsAtMostVersion(header.version, 1, 9)) {
+            Printf("Warning: Unsupported 'Mesh' blob version. Found: %s. Max supported: 1.9\n", VersionToString(header.version));
+        }
+        if (!IsAtLeastVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported 'Mesh' blob version. Found: %s. Min supported: 1.0\n", VersionToString(header.version));
+        }
+        struct {
+            if (IsAtLeastVersion(header.version, 1, 9)) {
+                local int i;
+                for (i = 0; i < 4; i++) {
+                    int16 material_ids; // short
+                }
+                //Printf("%d\t%d\t%d\t%d\t%s\n", Unk_MaterialID_FH3, UnkV9_MaterialID, UnkV9[0], UnkV9[1], metadata[0].Name);
+            } else {
+                int16 material_id; // short m_MaterialIndex;
+                //Printf("%s %d\n", metadata[0].Name, Unk_MaterialID_FH3);
+            }
+            
+            int16 bone_index <bgcolor=cRed, comment=bundle.blob[0].skeleton_blob.bones[this].name.data>; // short m_RigidBoneIndex;
+            //Printf("%s %d\n", metadata[0].data, BoneId);
+            LODFlags levels_of_detail; // unsigned short m_LODFlags; don't render if == 0
+            //uint16 levels_of_detail;
+            //if (levels_of_detail != 0) {
+            //    Printf("%08X %d\n", FTell() - 2, levels_of_detail);
+            //}
+            //if (levels_of_detail.LODS) {
+            //    Printf("%s %s\n", metadata[0].data, bundle.blob[0].skeleton_blob.bones[bone_index].name.data);
+            //}
+            int8 lowest_level_of_detail; // char m_MinLOD; don't render if sign bit is set (& 0x10 == 0); 14251B9BD
+            int8 highest_level_of_detail; // char m_MaxLOD
+            struct {
+                Boolean opaque : 1; // Opaque_And_Transparent
+                uint16 decal : 1;
+                Boolean transparent : 1; // DecalTransparent
+                Boolean shadow : 1; // !Opaque; = 1, if version < 1.7
+                Boolean not_shadow : 1; // !Transparent; = 1, if version < 1.7
+                Boolean alpha_to_coverage : 1; // DecalOpaque
+                uint16 __padding__ : 9;
+            } bucket_flags; // unsigned short m_BucketFlags;
+            //Printf("%d\t%s\n", bucket_flags.value, metadata[0].Name);
+            int8 bucket_order; // char m_BucketOrder;
+            
+            if (IsAtLeastVersion(header.version, 1, 2)) {
+                uint8 skinning_elements_count; // unsigned char m_SkinWeights;
+                uint8 morph_weights_count; // unsigned char m_MorphTargets;
+                //Printf("%s %d\n", metadata[0].Name, UnkV2_WeightsCount);
+            }
+            
+            if (IsAtLeastVersion(header.version, 1, 3)) {
+                Boolean is_morph_damage; // bool m_IsMorphDamage; objectCBuffer.g_DecompressFlags[1] ?
+            }
+            
+            Boolean is_32bit_indexes <comment="true: R32_UINT, false: R16_UINT">; // bool m_32bitIndices
+            enum <uint16> D3D_PRIMITIVE_TOPOLOGY {
+                D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4
+            } topology; // unsigned short m_Topology
+            int32 index_buffer_id; // long m_IndexBufferIndex; 'IndB'; metadata 'Id  ', buffer_type = 1
+            uint32 dword1CC; // unsigned long m_IndexBufferOffset;
+            int32 start_index; // long m_IndexBufferDrawOffset; StartIndexLocation
+            int32 base_vertex; // long m_IndexedVertexOffset; BaseVertexLocation; VBuf[buf_id][IndB[id]+VertIndexOffset], "Base vertex offset magnitude"
+            uint32 index_count; // unsigned long m_IndexCount; IndexCountPerInstance
+            uint32 face_count; // unsigned long m_PrimCount;
+            
+            if (IsAtLeastVersion(header.version, 1, 6)) {
+                float average_cache_miss_ratio; // float m_ACMR; =vertices_count/faces_count
+                uint32 referenced_vertex_count; // unsigned long m_ReferencedVertexCount; sometimes zero, if average_cache_miss_ratio > 1?
+            }
+            
+            uint32 vertex_layout_id; // unsigned long m_VertexDeclarationIndex; ordinal, not metadata 'Id  '
+            uint32 vertex_buffer_ids_length; // unsigned long
+            struct {
+                int32 id; // m_Index; metadata 'Id  ', buffer_type = 2
+                uint32 input_slot; // m_Slot
+                uint32 stride; // m_Stride
+                uint32 offset; // m_Offset
+            } vertex_buffer_ids[vertex_buffer_ids_length]; // read: 142ADF116; std::vector<CommonModel::Serialization::VBuffUsage> m_VertexBufferIndices; void *
+            
+            if (IsAtLeastVersion(header.version, 1, 4)) {
+                int32 morph_data_buffer_id; // long m_MorphBufferIndex; metadata 'Id  ', buffer_type = 4
+                int32 skinning_data_buffer_id; // long m_SkinBufferIndex; metadata 'Id  ', buffer_type = 5
+            }
+            
+            uint32 constant_buffer_ids_length; // unsigned long
+            if (constant_buffer_ids_length > 0) {
+                int32 constant_buffer_ids[constant_buffer_ids_length]; // m_ConstantBufferIndices; 'ConB'; metadata 'Id  ', buffer_type = 3
+            }
+            
+            if (IsAtLeastVersion(header.version, 1, 1)) {
+                uint32 source_mesh_index; // unsigned long m_SourceMeshIndex;
+            }
+            
+            if (IsAtLeastVersion(header.version, 1, 5)) {
+                struct {
+                    float v_translation;
+                    float v_scale;
+                    float u_translation;
+                    float u_scale;
+                } texcoord_transform[5] <read=Str("%g %g %g %g", u_translation, v_translation, u_scale, v_scale)>; // DirectX::XMVECTOR m_UVScale; union __m128 {{v translation, v scale} x2}; objectCBuffer.g_UVScale
+            }
+            
+            if (IsAtLeastVersion(header.version, 1, 8)) {
+                DirectX_XMVECTOR position_scale; // DirectX::XMVECTOR m_PosScale; objectCBuffer.g_PosScale
+                DirectX_XMVECTOR position_translate; // DirectX::XMVECTOR m_PosOffset; objectCBuffer.g_PosOffset
+            }
+        } mesh_blob; // name: meshBlob
+        break;
+    case TAG_BLOB_InstancedVertexLayout:
+    case TAG_BLOB_VertexLayout:
+        // 0.0 initial
+        // 1.0 add element_formats
+        // 1.1 add semantic bitfield - FM5, FM2023; FH2, FH3, FH5
+        if (!IsAtMostVersion(header.version, 1, 1)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Max supported: 1.1\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        struct {
+            ushort semantic_names_length; // unsigned short
+            String semantic_names[semantic_names_length] <optimize=false>; // std::string m_ElementNames; if (a4) push_back("DRAW_INDEX")
+            ushort num_elements; // unsigned short; NumElements
+            
+            struct D3D12_INPUT_ELEMENT_DESC {
+                ushort semantic_name_index; // 2-byte; m_SemanticNameIndex
+                ushort semantic_index; // 2-byte; SemanticIndex
+                ushort input_slot; // 2-byte; InputSlot
+                ushort input_slot_class; // 2-byte; InputSlotClass; D3D12_INPUT_CLASSIFICATION: 0 - PER_VERTEX_DATA, 1 - PER_INSTANCE_DATA
+                DXGI_FORMAT format; // 4-byte; Format
+                int aligned_byte_offset <comment="-1 = D3D12_APPEND_ALIGNED_ELEMENT ">; // 4-byte; AlignedByteOffset
+                uint instance_data_step_rate; // 4-byte; InstanceDataStepRate
+                //if (a4) {
+                //    m_SemanticNameIndex = semantic_names_length - 1
+                //    SemanticIndex = 0
+                //    Format = 42 // DXGI_FORMAT_R32_UINT
+                //    InputSlot = MaxInputSlot + 1
+                //    AlignedByteOffset = -1
+                //    InputSlotClass = 1
+                //}
+                
+                local string semantic_name = semantic_names[semantic_name_index].data;
+            } elements[num_elements] <comment=Str("%s%d - %s", semantic_name, semantic_index, EnumToString(format)), optimize=false>; // void *, element size: 0x14
+            
+            if (IsAtLeastVersion(header.version, 1, 0)) {
+                ElementFormats element_formats[num_elements]; // void *; std::vector<ElementFormats::Enum>; FH3 OpusProfile 142ADCF74
+                //if (a4) element_formats[ElementCount - 1] = 15 // UInt_32
+            } else {
+                //element_formats[i] = sub_142ADCF74(D3D12_INPUT_ELEMENT_DESC[i].Format)
+            }
+
+            if (IsAtLeastVersion(header.version, 1, 1)) {
+                Boolean TEXCOORD0 : 1;
+                Boolean TEXCOORD1 : 1;
+                Boolean TEXCOORD2 : 1;
+                Boolean TEXCOORD3 : 1;
+                Boolean TEXCOORD4 : 1;
+                Boolean TANGENT0 : 1;
+                Boolean TANGENT1 : 1;
+                Boolean TANGENT2 : 1;
+                Boolean TANGENT3 : 1;
+                Boolean TANGENT4 : 1;
+                Boolean COLOR0 : 1;
+                uint __padding__ : 21; // unsigned long
+                
+                // TEXCOORD/TEXCOORD_XONLY: 0x1, 0x2, 0x4, 0x8, 0x10
+                // TANGENT: 0x20, 0x40, 0x80, 0x100, 0x200
+                // COLOR: 0x400
+            }
+        } vertex_layout_blob;
+        break;
+    case TAG_BLOB_IndexBuffer:
+    case TAG_BLOB_VertexBuffer:
+    case TAG_BLOB_MorphBuffer:
+    case TAG_BLOB_SkinBuffer:
+        // 0.0 initial
+        // 1.0 add DXGI_FORMAT and NumElements fields - FM5, FM2023; FH2, FH3, FH5
+        if (!IsAtMostVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Max supported: 1.0\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        struct {
+            struct {
+                int length;
+                int size <format=hex>;
+                ushort stride;
+                if (IsAtLeastVersion(header.version, 1, 0)) {
+                    ubyte num_elements; // NumElements
+                    ubyte __padding__;
+                    DXGI_FORMAT format; // Format
+                } else {
+                    // num_elements = 1
+                    // format = DXGI_FORMAT_UNKNOWN (0)
+                    ubyte __padding__[2];
+                }
+            } descriptor; // D3D12_BUFFER_SRV, D3D12_SHADER_RESOURCE_VIEW_DESC
+            
+            // types
+            //   index_buffer = 1
+            //   vertex_buffer = 2
+            //   constant_buffer = 3
+            //   morph_data = 4
+            //   skinning_data = 5
+
+            /*switch (header.tag) {
+            case TAG_BLOB_IndexBuffer:
+                Face faces[descriptor.length / 3];
+                //local int k;
+                //for (k = 0; k < descriptor.length / 3; k++) {
+                //    if (faces[k].a == faces[k].b || faces[k].b == faces[k].c || faces[k].a == faces[k].c) {
+                //        Printf("%d\n", k);
+                //    }
+                //}
+                break;
+            case TAG_BLOB_MorphBuffer:
+                struct {
+                    // weight_id (rim)
+                    //   0 - diameter
+                    //   1 - width
+                    // weight_id (tire)
+                    //   0 - outer diameter
+                    //   1 - inner diameter
+                    //   2:3 - tire deformation
+                    Weight position[descriptor.num_elements / 2];
+                    Weight normal[descriptor.num_elements / 2];
+                } buffer[descriptor.length] <optimize=false>;
+                break;
+            case TAG_BLOB_VertexBuffer:
+            case TAG_BLOB_Skin:
+                struct {
+                    ubyte data[descriptor.stride];
+                } buffer[descriptor.length] <optimize=false>; // m_DxBuffer
+                break;
+            }*/
+            ubyte data[descriptor.size];
+        } buffer_blob; // CommonModel::ModelBuffer bufferBlob;
+        break;
+    case TAG_BLOB_Model:
+        // 1.0 initial
+        // 1.1 add 'Mrph' blob; size: 0xE - FM5; FH2
+        // 1.2 add DecompressFlags field; size: 0x10 - FM6Apex, FM2023; FH3, FH5
+        // 1.3 add unk__v1_3 field; size: 0x12 - FH5 v1.573.834.0
+        if (!IsAtMostVersion(header.version, 1, 2)) {
+            Printf("Warning: Unsupported 'Modl' blob version. Found: %s. Max supported: 1.2\n", VersionToString(header.version));
+        }
+        if (!IsAtLeastVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported 'Modl' blob version. Found: %s. Min supported: 1.0\n", VersionToString(header.version));
+        }
+        struct ModelStats { // CommonModel::Serialization::ModelStats
+            uint16 meshes_count; // m_Meshes; CommonModel::Mesh
+            uint16 buffers_count; // m_HardwareBuffers; IndB, VerB, ConB, MBuf, Skin; CommonModel::ModelBuffer
+            uint16 layouts_count; // m_Layouts; ILay, VLay; CommonModel::VertexLayout
+            uint16 materials_count; // m_MaterialInstances
+            uint8 has_levels_of_detail; // bool m_HasLOD;
+            int8 lowest_level_of_detail; // m_MinLOD
+            int8 highest_level_of_detail; // m_MaxLOD; -1 is LODS, 0 is LOD0
+            uint8 __padding__;
+            LODFlags levels_of_detail; // m_LODFlags; FH3 OpusDev forza_x64_profile.exe: 142A333BF
+            if (IsAtLeastVersion(header.version, 1, 2)) {
+                uint8 decompress_flags <comment="Store normal.x in position.w">; // bool m_Compressed; FH3 OpusDev forza_x64_profile.exe: 142ADCDA8; 1, 2; g_DecompressFlags
+                uint8 __padding__;
+            }
+            if (IsAtLeastVersion(header.version, 1, 3)) {
+                uint8 unk__v1_3;
+                uint8 __padding__;
+            }
+        } model_blob; // name: modelBlob; void *
+        break;
+    case TAG_BLOB_LightScenario:
+    case TAG_BLOB_DebugLightScenario:
+        // 1.0 initial; shaderPlatformsInThisBinary = 3 (durango, pc?)
+        // 1.1 add is_inline
+        // 1.2 add unk__v1_2
+        // 1.3 add unk__v1_3, pixel_shader - FM5
+        // 1.4 add unk__v1_4, path__v1_4 - FH2
+        // 1.5 add path__v1_5 - FH3
+        //   *Horizon fork. maybe from earlier version
+        //   1.6 add unk0_length__v1_6, unk__v1_6 - FH4
+        //   1.7 shaderPlatformsInThisBinary = 5
+        //   1.8 shaderPlatformsInThisBinary = 6 - FH5
+        // 1.6 - FM6Apex, FM7, FM2023
+        if (!IsAtMostVersion(header.version, 1, 8)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Max supported: 1.8\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        if (!IsAtLeastVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Min supported: 1.0\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        struct {
+            if (IsAtLeastVersion(header.version, 1, 1)) {
+                Boolean is_inline; // bool shadersAreEmbedded; DXBC built into .shaderbin
+            }
+            
+            uint8 light_scenarios_length; // numLightScenarios1; ReadData(1)
+            struct {
+                _7BitString name; // lightScenarioName
+
+                // struct LightScenarioInfo
+                uint32 version; // unsigned long m_Version;
+                
+                if (IsAtLeastVersion(header.version, 1, 4)) {
+                    Boolean has_instanced_data__v1_4; // bool m_HasInstancedData;
+                }
+                
+                if (IsAtLeastVersion(header.version, 1, 2)) {
+                    uint32 vertex_shaders_length; // unsigned long animScenarioCount;
+                } else {
+                    local uint32 vertex_shaders_length = 1;
+                }
+                
+                local uint unk0_length = 1;
+                if (series == Horizon && IsAtLeastVersion(header.version, 1, 6)) {
+                    uint unk0_length__v1_6; // unsigned long
+                    unk0_length = unk0_length__v1_6;
+                }
+                
+                struct {
+                    if (series == Horizon && IsAtLeastVersion(header.version, 1, 6)) {
+                        uint unk__v1_6; // unsigned long
+                    }
+                    
+                    struct {
+                        if (IsAtLeastVersion(header.version, 1, 2)) {
+                            uint8 unk__v1_2; // unsigned char animScenarioFlags; id or type
+                        }
+                        
+                        _7BitString path; // m_VertexShaderName; .vso
+                        if (is_inline) { // path is VertexShaderResource11
+                            Printf("Warning: 'LSCE' blob is_inline field is currently not supported.\n");
+                        }
+                        if (series == Motorsport) {
+                            if (IsAtLeastVersion(header.version, 1, 6)) { // FM7
+                                uint8 platforms_length; // shaderPlatformsInThisBinary
+                                struct {
+                                    uint8 platform; // 1 - Durango, 2 - PC
+                                    uint8 hash[32]; // m_VSHash; SHA-256
+                                } hashes[platforms_length];
+                            } else if (IsAtLeastVersion(header.version, 1, 5)) {
+                                struct {
+                                    uint8 hash[32];
+                                } hashes[2]; // 0 - ?, 1 - Durango?
+                            }
+                        }
+                        //ubyte unk[64]; // gls_ch1glossopacityemissive.shaderbin
+                        //ubyte unk[67]; // ambakes_rotor.shaderbin
+                        if (exists(has_instanced_data__v1_4) && has_instanced_data__v1_4) {
+                            _7BitString path__v1_4; // .vso
+                            if (is_inline) { // path__v1_4 is VertexShaderResource11
+                                Printf("Warning: 'LSCE' blob is_inline field is currently not supported.\n");
+                            }
+                        }
+                    } vertex_shaders[vertex_shaders_length] <optimize=false>;
+                    
+                    if (IsAtLeastVersion(header.version, 1, 3)) {
+                        Boolean unk__v1_3 : 1; // unused; = 1, if version < 1.3
+                        Boolean unk__v1_3 : 1; // unused
+                        Boolean unk__v1_3 : 1; // unused
+                        Boolean unk__v1_3 : 1;
+                        Boolean unk__v1_3 : 1; // unused; = 1, if version < 1.3
+                        Boolean unk__v1_3 : 1;
+                        int __padding__ : 26; // long
+                    }
+                    
+                    _7BitString geometry_and_pixel_shader; // .gso, .pso
+                    if (unk__v1_3[3] != 0) { // & 0x8
+                        if (is_inline) { // geometry_and_pixel_shader is GeometryShaderResource11
+                            Printf("Warning: 'LSCE' blob is_inline field is currently not supported.\n");
+                        }
+                    }
+                    if (is_inline) { // geometry_and_pixel_shader is PixelShaderResource11
+                        Printf("Warning: 'LSCE' blob is_inline field is currently not supported.\n");
+                    }
+                    
+                    if (IsAtLeastVersion(header.version, 1, 5) && exists(unk__v1_4) && unk__v1_4) {
+                        _7BitString path__v1_5;
+                        if (is_inline) { // path__v1_5 is PixelShaderResource11
+                            Printf("Warning: 'LSCE' blob is_inline field is currently not supported.\n");
+                        }
+                    }
+                    
+                    if (unk__v1_3[5] != 0) { // & 0x20; v1.6+
+                        _7BitString shader_library; // .lso
+                        if (is_inline) { // shader_library is ShaderLibraryResource11
+                            Printf("Warning: 'LSCE' blob is_inline field is currently not supported.\n");
+                        }
+                    }
+                    //ubyte unk; // ambakes_rotor.shaderbin
+                } unk0[unk0_length] <optimize=false>;
+            } light_scenarios[light_scenarios_length] <optimize=false>;
+        } light_scenario_blob;
+        break;
+    case TAG_BLOB_CBMP:
+    case TAG_BLOB_TXMP:
+    case TAG_BLOB_SPMP:
+        // 1.0 initial
+        // 2.0 replace name by name_hash
+        // 3.0 add guid - FH3
+        // 3.1 change shader_parameters_length type from ubyte to ushort - FH5
+        if (!IsAtMostVersion(header.version, 3, 1)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Max supported: 3.1\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        if (!IsAtLeastVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported '%s' blob version. Found: %s. Min supported: 1.0\n", TagToString(header.tag), VersionToString(header.version));
+        }
+        
+        if (IsAtLeastVersion(header.version, 3, 1)) {
+            ushort shader_parameters_length; // ReadData(2)
+        } else {
+            ubyte shader_parameters_length; // ReadData(1)
+        }
+        if (shader_parameters_length > 0) {
+            struct {
+                if (IsAtLeastVersion(header.version, 2, 0)) {
+                    uint name_hash <read=NameHashToString>; // unsigned long, parameter_name_hash: 14258F8D7
+                    ushort id_or_offset <comment="CBuffer - offset; SRV Texture, Sampler - id">; // unsigned short
+                    
+                    if (IsAtLeastVersion(header.version, 3, 0)) {
+                        GUID guid; // ReadData(16); may be different for parameters with the same name
+                    }
+                    
+                    if (NameHashToString(name_hash) == "") {
+                        // '^.*\t(.{8}) (.*)$' -> 'case 0x\1:\n    return "\2";'
+                        if (header.tag == TAG_BLOB_TXMP) {
+                            Printf("t%d\t%08X\n", id_or_offset, name_hash);
+                        } else if (header.tag == TAG_BLOB_SPMP) {
+                            Printf("s%d\t%08X\n", id_or_offset, name_hash);
+                        } else {
+                            Printf("%d\t%08X\n", id_or_offset, name_hash);
+                        }
+                        //Printf("// Offset: %d\t%08X\n", Id_Offset, name_hash);
+                    } else {
+                        //Printf("%d\t%08X %s %s\n", id_or_offset, name_hash, GUIDToString(Guid), NameHashToString(name_hash));
+                    }
+                } else {
+                    _7BitString name;
+                    ubyte id_or_offset; // unsigned char
+                }
+            } shader_parameters[shader_parameters_length] <optimize=false>;
+        }
+        break;
+    case TAG_BLOB_TextureContentBlob:
+        // 0.0 PC - FH3
+        // 2.0 TextureContent2, Durango
+        // 3.0 TextureContent3, Scarlett, Xbox Series X
+        if (!IsAtMostVersion(header.version, 2, 0)) {
+            Printf("Warning: Unsupported 'TXCB' blob version. Found: %s. Max supported: 2.0.\n", VersionToString(header.version));
+        }
+        if (IsAtLeastVersion(header.version, 1, 0) && !IsAtLeastVersion(header.version, 2, 0)) {
+            Printf("Warning: 'TXCB' blob version v1.0 is not supported. Found: %s.\n", VersionToString(header.version));
+        }
+        ubyte data[header.data_size];
+        break;
+    case TAG_BLOB_ManufacturerColors: // CarManufacturerColors::Load()
+        // 1.0 initial
+        // 1.1 change material_index_mask type from unsigned short to unsigned long
+        ubyte manufacturer_colors_length; // unsigned char; 142A24211
+        struct {
+            Printf("manufacturer color\n");
+            ubyte materials_length; // unsigned char
+            struct {
+                if (IsAtLeastVersion(header.version, 1, 1)) {
+                    uint material_index_mask; // unsigned long
+                } else {
+                    ushort material_index_mask; // unsigned short
+                }
+                
+                float preview_color[3]; // {R, G, B, 1}
+                _7BitString path;
+                Printf("%8X %3d %3d %3d %s\n", material_index_mask, 255 * preview_color[0], 255 * preview_color[1], 255 * preview_color[2], path.data);
+            } materials[materials_length] <optimize=false>;
+        } manufacturer_colors[manufacturer_colors_length] <optimize=false>; // std::vector<std::vector<?>>
+        break;
+    case TAG_BLOB_TRGT:
+        // 1.0 initial
+        // 1.1 add unk__v1_1 - FH3, FH5
+        if (!IsAtMostVersion(header.version, 1, 1)) {
+            Printf("Warning: Unsupported 'TRGT' blob version. Found: %s. Max supported: 1.1.\n", VersionToString(header.version));
+        }
+        if (!IsAtLeastVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported 'TRGT' blob version. Found: %s. Max supported: 1.0.\n", VersionToString(header.version));
+        }
+        struct {
+            if (IsAtLeastVersion(header.version, 1, 1)) {
+                Boolean is_inline; // bool; same as LSCE v1.1 (DXBC built into .shaderbin)
+            }
+            ubyte unk_length; // ReadData(1)
+            if (unk_length > 0) {
+                Printf("Warning: 'TRGT' blob unk_length > 0 is not supported.\n");
+            }
+        } render_target_blob; // ReadRenderTargetBlob()
+        break;
+    case TAG_BLOB_VERS:
+        // 1.1 ? - FH5
+        uint unk;
+        _7BitString path;
+        break;
+    case TAG_BLOB_VARS: // void Shader::ReadVariantsBlob(Bundle::Reader *)?
+        // 1.3 ? - FH5
+        /*if (!IsAtMostVersion(header.version, 1, 3)) {
+            Printf("Warning: Unsupported 'VARS' blob version. Found: %s. Max supported: 1.3.\n", VersionToString(header.version));
+        }
+        if (!IsAtLeastVersion(header.version, 1, 0)) {
+            Printf("Warning: Unsupported 'VARS' blob version. Found: %s. Max supported: 1.0.\n", VersionToString(header.version));
+        }
+        
+        if (IsAtLeastVersion(header.version, 1, 3)) {
+            _7BitString unk;
+        }
+        uint unk0_length; // unsigned long
+        // ? unk0[unk0_length]
+        uint unk1_length; // unsigned long
+        break;*/
+    case TAG_BLOB_STex: // set of Track textures
+        // 0.0 initial - FM5
+        Bundle texture_bundle;
+        break;
+    case TAG_BLOB_ParticleBlob:
+        // 2.1 FM5
+    default:
+        ubyte data[header.data_size];
+        break;
+    }
+} Blob <read=TagToString(header.tag), comment=BlobToString, optimize=false>;
+
+string BlobToString(Blob &blob) {
+    local string s, tag = TagToString(blob.header.tag);
+    switch (tag) {
+    case "TXCB":
+        SPrintf(s, "TeXture Content Blob");
+        break;
+    case "Skel":
+        SPrintf(s, "Skeleton");
+        break;
+    case "Mrph":
+        SPrintf(s, "Morph Table");
+        break;
+    case "Modl":
+        SPrintf(s, "Model");
+        break;
+    case "MatI":
+        SPrintf(s, "Material [ID: %d] (Name: %s)", blob.metadata[1].data, blob.metadata[0].data);
+        break;
+    case "Mesh":
+        SPrintf(s, "Mesh (Name: %s)", blob.metadata[0].data);
+        break;
+    case "VLay":
+        SPrintf(s, "Vertex Layout [ID: %d]", blob.metadata[0].data);
+        break;
+    case "ILay":
+        SPrintf(s, "Instanced Vertex Layout [ID: %d]", blob.metadata[0].data);
+        break;
+    case "IndB":
+        SPrintf(s, "Index Buffer [ID: %d] (Length: %d)", blob.metadata[0].data, blob.buffer_blob.descriptor.length);
+        break;
+    case "VerB":
+        SPrintf(s, "Vertex Buffer [ID: %d] (Length: %d)", blob.metadata[0].data, blob.buffer_blob.descriptor.length);
+        break;
+    case "MBuf":
+        SPrintf(s, "Morph Buffer [ID: %d] (Length: %d)", blob.metadata[0].data, blob.buffer_blob.descriptor.length);
+        break;
+    case "Skin":
+        SPrintf(s, "Skinning Buffer [ID: %d] (Length: %d)", blob.metadata[0].data, blob.buffer_blob.descriptor.length);
+        break;
+    case "LSCE":
+        SPrintf(s, "Light Scenario"); // void Shader::ReadLightScenarioBlob(Bundle::Reader *,unsigned long,std::vector<unsigned long>,TReference<IOSys::IVolume>,bool,const MaterialSystemResolver*)
+        break;
+    case "CBMP":
+        SPrintf(s, "Constant Buffer Parameter Mapping"); // ParameterConstantBuffer
+        break;
+    case "TXMP":
+        SPrintf(s, "Texture Parameter Mapping"); // void Shader::ReadParameterMapping(Bundle::BlobReader *,std::map<unsigned long,unsigned short> &,std::map<unsigned long,unsigned short> &)
+        break;
+    case "SPMP":
+        SPrintf(s, "Sampler Parameter Mapping");
+        break;
+    case "DBLS":
+        SPrintf(s, "Debug Light Scenario");
+        break;
+    case "MTPR":
+        SPrintf(s, "Material Shader Parameters");
+        break;
+    case "DFPR":
+        SPrintf(s, "Default Shader Parameters"); // void MaterialSystemObject::ReadShaderParameterBlob(Bundle::Reader *,unsigned long,MaterialSystemResolver const &)
+        break;
+    case "TRGT":
+        SPrintf(s, "Render Target");
+        break;
+    default:
+        SPrintf(s, "");
+        break;
+    }
+    return s;
+}
+
+typedef struct {
+    // 1.0 initial - FM5; FH2
+    // 1.1 change blob_count type from 2-byte to 4-byte - FM6Apex, FM2023; FH3, FH5
+    uint tag <format=hex>; // m_Tag
+    if (tag != TAG_BUNDLE) {
+        Printf("Error: File signature not match.\n");
+    }
+    Version version; // m_VersionMajor, m_VersionMinor
+    if (!IsAtMostVersion(version, 1, 1)) {
+        Printf("Warning: Unsupported Bundle version. Found: %s. Max supported: 1.1\n", VersionToString(version));
+    }
+    if (!IsAtLeastVersion(version, 1, 0)) {
+        Printf("Warning: Unsupported Bundle version. Found: %s. Min supported: 1.0\n", VersionToString(version));
+    }
+    
+    if (IsAtLeastVersion(version, 1, 1)) {
+        ushort __padding__; // m_Reserved
+    } else {
+        ushort blob_count; // m_BlobCount
+    }
+    
+    uint header_size <format=hex>; // m_HeaderSize; includes metadata
+    uint total_size <format=hex>; // m_TotalSize
+    
+    if (IsAtLeastVersion(version, 1, 1)) {
+        uint blob_count; // m_BlobCount
+    }
+} FileHeader <read=Str("v%s", VersionToString(version))>; // Bundle::FileHeader, Bundle::FileHeaderV1
+
+typedef struct {
+    local int64 bundle_base_pos = FTell();
+    
+    FileHeader header <bgcolor=cGreen>; // m_Header
+    
+    local int64 base_pos = FTell();
+    local int i;
+    for (i = 0; i < header.blob_count; i++) {
+        FSeek(base_pos + i * 0x18);
+        Blob blob;
+    }
+} Bundle <read=TagToString(header.tag)>;
+
+Bundle bundle <open=true>;
