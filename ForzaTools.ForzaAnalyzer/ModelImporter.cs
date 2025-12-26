@@ -36,7 +36,6 @@ namespace ForzaTools.ForzaAnalyzer.Services
         private readonly List<string> _logs = new();
         private void Log(string s) => _logs.Add(s);
 
-        private string _debugPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "model_debug_dump.txt");
         private const int MODEL_BUFFER_HEADER_SIZE = 16;
 
         private class ElementInfo
@@ -47,26 +46,50 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
         public ImporterResult ExtractModels(Bundle bundle)
         {
-            // (Debug file writing removed for brevity, keep if needed)
             var result = new ImporterResult();
             _logs.Clear();
 
             var skeleton = bundle.Blobs.OfType<SkeletonBlob>().FirstOrDefault();
-            var vertexLayouts = bundle.Blobs.OfType<VertexLayoutBlob>().ToArray();
+
+            // Map Layouts
+            var layouts = bundle.Blobs.OfType<VertexLayoutBlob>().ToArray();
+
             var indexBuffers = bundle.Blobs.OfType<IndexBufferBlob>().ToArray();
             var meshes = bundle.Blobs.OfType<MeshBlob>().ToArray();
 
+            // Build Vertex Buffer Map (Key: Metadata ID)
             var vertexBufferMap = new Dictionary<int, VertexBufferBlob>();
             foreach (var vb in bundle.Blobs.OfType<VertexBufferBlob>())
             {
                 var idMeta = vb.Metadatas.OfType<IdentifierMetadata>().FirstOrDefault();
-                if (idMeta != null) vertexBufferMap[(int)idMeta.Id] = vb;
+                if (idMeta != null)
+                {
+                    // Cast to int to match usage keys
+                    vertexBufferMap[(int)idMeta.Id] = vb;
+                }
             }
 
             if (indexBuffers.Length == 0) return result;
 
+            // Use the first index buffer (Standard Forza logic)
             var globalIndexBuffer = indexBuffers[0];
-            byte[] globalIndexData = globalIndexBuffer.GetContents();
+
+            // Handle Index Buffer Data Source (In-Memory vs Loaded)
+            byte[] globalIndexData;
+            int indexBufferOffset = 0;
+
+            if (globalIndexBuffer.Header?.Data != null && globalIndexBuffer.Header.Data.Length > 0)
+            {
+                // In-Memory (No Header in Data)
+                globalIndexData = globalIndexBuffer.Header.Data.SelectMany(x => x).ToArray();
+                indexBufferOffset = 0;
+            }
+            else
+            {
+                // Loaded (Header included in Data)
+                globalIndexData = globalIndexBuffer.GetContents();
+                indexBufferOffset = MODEL_BUFFER_HEADER_SIZE;
+            }
 
             Matrix4x4[] boneMatrices = null;
             if (skeleton != null)
@@ -83,11 +106,13 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
             foreach (var mesh in meshes)
             {
+                // Filter LODs if necessary
                 if ((mesh.LODFlags & 0b1111) == 0 && !mesh.LOD_LOD0) continue;
 
                 try
                 {
-                    var geo = ExtractMesh(mesh, vertexLayouts, vertexBufferMap, globalIndexData, boneMatrices);
+                    // Pass 'bundle' and correct offsets
+                    var geo = ExtractMesh(bundle, mesh, layouts, vertexBufferMap, globalIndexData, indexBufferOffset, boneMatrices);
                     if (geo != null) result.Meshes.Add(geo);
                 }
                 catch (Exception ex) { Log($"Mesh failed: {ex.Message}"); }
@@ -98,19 +123,41 @@ namespace ForzaTools.ForzaAnalyzer.Services
         }
 
         private ForzaGeometryData ExtractMesh(
+            Bundle bundle,
             MeshBlob mesh,
             VertexLayoutBlob[] layouts,
             Dictionary<int, VertexBufferBlob> vbMap,
             byte[] globalIndexData,
+            int globalIndexBaseOffset,
             Matrix4x4[] boneMatrices)
         {
-            var layout = layouts[mesh.VertexLayoutIndex];
+            // Resolve Layout
+            VertexLayoutBlob layout = null;
+
+            // 1. Try Metadata ID
+            var layoutById = bundle.Blobs.OfType<VertexLayoutBlob>()
+                .FirstOrDefault(l => l.Metadatas.OfType<IdentifierMetadata>().Any(m => (int)m.Id == mesh.VertexLayoutIndex));
+
+            if (layoutById != null)
+                layout = layoutById;
+            // 2. Fallback to Array Index
+            else if (mesh.VertexLayoutIndex >= 0 && mesh.VertexLayoutIndex < layouts.Length)
+                layout = layouts[mesh.VertexLayoutIndex];
+            // 3. Last Resort
+            else if (layouts.Length > 0)
+                layout = layouts[0];
+
+            if (layout == null) throw new Exception("Vertex Layout not found.");
+
             string name = mesh.Metadatas.OfType<NameMetadata>().FirstOrDefault()?.Name ?? "Mesh";
 
             // 1. INDICES
             int indexStride = mesh.Is32BitIndices ? 4 : 2;
             int indexCount = mesh.IndexCount;
-            long startIndexOffset = MODEL_BUFFER_HEADER_SIZE + ((long)mesh.IndexBufferDrawOffset * indexStride);
+            long startIndexOffset = globalIndexBaseOffset + ((long)mesh.IndexBufferDrawOffset * indexStride);
+
+            if (globalIndexData == null || startIndexOffset + (indexCount * indexStride) > globalIndexData.Length)
+                throw new Exception("Index buffer data out of bounds or missing.");
 
             var indices = new int[indexCount];
             int minIndex = int.MaxValue;
@@ -131,12 +178,11 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
             // 2. VERTICES
             int vertexCount = (maxIndex - minIndex) + 1;
+            if (vertexCount <= 0) return null;
 
-            // We store RawPositions (normalized) AND FinalPositions
             var rawPos = new Vector3[vertexCount];
             var finalPos = new Vector3[vertexCount];
-
-            var posW = new Vector4[vertexCount]; // Temp storage for W component (Normal X)
+            var posW = new Vector4[vertexCount];
             var normals = new Vector3[vertexCount];
             var uvs = new Vector2[vertexCount];
 
@@ -155,9 +201,9 @@ namespace ForzaTools.ForzaAnalyzer.Services
             foreach (var item in elementsToRead)
             {
                 if (GetSemanticName(layout, item.Desc) != "POSITION") continue;
-                ReadBuffer(mesh, vbMap, item.Desc, item.Offset, minIndex, vertexCount, (br, i) =>
+
+                ReadBuffer(bundle, mesh, vbMap, item.Desc, item.Offset, minIndex, vertexCount, (br, i) =>
                 {
-                    // Read Raw (Normalized) and Decompressed values
                     var (raw, decompressed, w) = ReadPositionFull(br, (int)item.Desc.Format, mesh);
                     rawPos[i] = raw;
                     posW[i] = new Vector4(decompressed, w);
@@ -170,7 +216,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 string semantic = GetSemanticName(layout, item.Desc);
                 if (semantic == "POSITION") continue;
 
-                ReadBuffer(mesh, vbMap, item.Desc, item.Offset, minIndex, vertexCount, (br, i) =>
+                ReadBuffer(bundle, mesh, vbMap, item.Desc, item.Offset, minIndex, vertexCount, (br, i) =>
                 {
                     if (semantic == "NORMAL")
                         normals[i] = ReadNormal(br, (int)item.Desc.Format, posW[i].W);
@@ -209,19 +255,58 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 Normals = normals,
                 UVs = uvs,
                 Indices = finalIndices,
-                SourceMesh = mesh,      // LINKED FOR SAVING
-                RawPositions = rawPos   // SAVED FOR LIVE EDITING
+                SourceMesh = mesh,
+                RawPositions = rawPos
             };
         }
 
-        private void ReadBuffer(MeshBlob mesh, Dictionary<int, VertexBufferBlob> vbMap, D3D12_INPUT_LAYOUT_DESC element, int offsetInStride, int minIndex, int count, Action<BinaryReader, int> readAction)
+        private void ReadBuffer(
+            Bundle bundle,
+            MeshBlob mesh,
+            Dictionary<int, VertexBufferBlob> vbMap,
+            D3D12_INPUT_LAYOUT_DESC element,
+            int offsetInStride,
+            int minIndex,
+            int count,
+            Action<BinaryReader, int> readAction)
         {
             var usage = mesh.VertexBuffers.FirstOrDefault(v => v.InputSlot == element.InputSlot);
-            if (usage == null || !vbMap.TryGetValue(usage.Index, out var vb)) return;
+            if (usage == null) return;
 
-            byte[] data = Flatten(vb);
-            long stride = vb.Header?.Stride ?? usage.Stride;
-            if (stride == 0) stride = 28;
+            // 1. Resolve Buffer (ID vs Index)
+            VertexBufferBlob vb = null;
+            if (vbMap.TryGetValue(usage.Index, out var vbById))
+            {
+                vb = vbById;
+            }
+            else if (usage.Index >= 0 && usage.Index < bundle.Blobs.Count)
+            {
+                vb = bundle.Blobs[usage.Index] as VertexBufferBlob;
+            }
+
+            if (vb == null) return;
+
+            // 2. Determine Data Source (Header.Data vs Raw Blob Data)
+            byte[] data;
+            int baseOffset = 0;
+
+            if (vb.Header?.Data != null && vb.Header.Data.Length > 0)
+            {
+                // In-Memory Created: Pure Vertex Data (No Header)
+                data = vb.Header.Data.SelectMany(x => x).ToArray();
+                baseOffset = 0;
+            }
+            else
+            {
+                // Loaded from File: Raw Blob Data (Includes 16-byte Header)
+                data = vb.GetContents();
+                baseOffset = MODEL_BUFFER_HEADER_SIZE;
+            }
+
+            if (data == null || data.Length == 0) return;
+
+            long stride = vb.Header?.Stride > 0 ? vb.Header.Stride : usage.Stride;
+            if (stride == 0) stride = 28; // Fallback
 
             using (var ms = new MemoryStream(data))
             using (var br = new BinaryReader(ms))
@@ -230,7 +315,8 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 for (int i = 0; i < count; i++)
                 {
                     long vertexId = minIndex + i + mesh.IndexedVertexOffset;
-                    long addr = usageOffset + (vertexId * stride) + offsetInStride;
+                    long addr = baseOffset + usageOffset + (vertexId * stride) + offsetInStride;
+
                     if (addr >= 0 && addr + 4 <= data.Length)
                     {
                         ms.Position = addr;
@@ -240,11 +326,10 @@ namespace ForzaTools.ForzaAnalyzer.Services
             }
         }
 
-        private byte[] Flatten(VertexBufferBlob vb) => vb.Header?.Data != null ? vb.Header.Data.SelectMany(x => x).ToArray() : Array.Empty<byte>();
+        // --- Helpers ---
         private string GetSemanticName(VertexLayoutBlob layout, D3D12_INPUT_LAYOUT_DESC element) => (element.SemanticNameIndex >= 0 && element.SemanticNameIndex < layout.SemanticNames.Count) ? layout.SemanticNames[element.SemanticNameIndex] : "UNKNOWN";
         private int GetFormatSize(int fmt) => fmt switch { 6 => 12, 10 => 8, 13 => 8, 16 => 8, 24 => 4, 28 => 4, 35 => 4, 37 => 4, _ => 4 };
 
-        // UPDATED DECODER: Returns both Raw and Final values
         private static (Vector3 Raw, Vector3 Decompressed, float W) ReadPositionFull(BinaryReader br, int format, MeshBlob mesh)
         {
             if (format == 13) // SNORM16
