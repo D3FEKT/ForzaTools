@@ -9,7 +9,7 @@ namespace ForzaTools.ForzaAnalyzer
         public MainWindow()
         {
             this.InitializeComponent();
-
+            Title = "ForzaTech Studio";
             // FIX: Check if Mica is supported before applying it.
             // If this check is missing, the window will be black/empty on Windows 10.
             if (MicaController.IsSupported())

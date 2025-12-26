@@ -72,39 +72,54 @@ namespace ForzaTools.ForzaAnalyzer.Views
         private void Initialize3DView()
         {
             if (_viewport != null) return;
-            try
+
+            // 1. Setup Viewport
+            _viewport = new Viewport3DX
             {
-                _viewport = new Viewport3DX
-                {
-                    BackgroundColor = Color.FromArgb(255, 30, 30, 30),
-                    ShowCoordinateSystem = true,
-                    ShowViewCube = true
-                };
+                BackgroundColor = Color.FromArgb(255, 30, 30, 30),
+                ShowCoordinateSystem = true,
+                ShowViewCube = true,
+                EffectsManager = new DefaultEffectsManager() // Ensure this line exists!
+            };
 
-                _viewport.EffectsManager = new DefaultEffectsManager();
-                _viewport.Camera = new PerspectiveCamera
-                {
-                    Position = new SDX.Vector3(50, 50, 50),
-                    LookDirection = new SDX.Vector3(-50, -50, -50),
-                    UpDirection = new SDX.Vector3(0, 1, 0),
-                    FarPlaneDistance = 50000
-                };
+            // 2. Setup Camera
+            _viewport.Camera = new PerspectiveCamera
+            {
+                Position = new SDX.Vector3(50, 50, 50),
+                LookDirection = new SDX.Vector3(-50, -50, -50),
+                UpDirection = new SDX.Vector3(0, 1, 0),
+                FarPlaneDistance = 50000
+            };
 
-                _modelGroup = new GroupModel3D();
+            // 3. Create Model Group
+            _modelGroup = new GroupModel3D();
 
-                _viewport.Items.Add(new DirectionalLight3D { Direction = new SDX.Vector3(-1, -1, -1), Color = Microsoft.UI.Colors.White });
-                _viewport.Items.Add(new AmbientLight3D { Color = Color.FromArgb(255, 100, 100, 100) });
-                _viewport.Items.Add(_modelGroup);
+            // --- ADD DEBUG CUBE HERE ---
+            var builder = new MeshBuilder();
+            // Use SDX.Vector3 explicitly to avoid conflict with System.Numerics
+            builder.AddBox(new SDX.Vector3(0, 0, 0), 15, 15, 15);
+            var cubeGeometry = builder.ToMesh();
 
-                ViewportContainer.Children.Add(_viewport);
-            }
-            catch { }
+            var cubeModel = new MeshGeometryModel3D
+            {
+                Geometry = cubeGeometry,
+                Material = new PhongMaterial { DiffuseColor = new SDX.Color4(1, 0, 0, 1) } // Red
+            };
+            _modelGroup.Children.Add(cubeModel);
+            // ---------------------------
+
+            // 4. Add Lights and Models to Viewport
+            _viewport.Items.Add(new DirectionalLight3D { Direction = new SDX.Vector3(-1, -1, -1), Color = Microsoft.UI.Colors.White });
+            _viewport.Items.Add(new AmbientLight3D { Color = Color.FromArgb(255, 100, 100, 100) });
+            _viewport.Items.Add(_modelGroup);
+
+            // 5. Add Viewport to UI
+            ViewportContainer.Children.Add(_viewport);
         }
 
-        private async void FileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void FileList_ItemClick(object sender, ItemClickEventArgs e)
         {
-            if (e.AddedItems.Count == 0) return;
-            if (e.AddedItems[0] is not FileViewModel fileVm) return;
+            if (e.ClickedItem is not FileViewModel fileVm) return;
             if (fileVm.ParsedObject is not ForzaTools.Bundles.Bundle bundle) return;
 
             IsLoading = true;
@@ -114,27 +129,89 @@ namespace ForzaTools.ForzaAnalyzer.Views
 
             try
             {
-                var result = await Task.Run(() => { var importer = new ModelImporter(); return importer.ExtractModels(bundle); });
+                var result = await Task.Run(() =>
+                {
+                    var importer = new ModelImporter();
+                    return importer.ExtractModels(bundle);
+                });
 
                 this.DispatcherQueue.TryEnqueue(() =>
                 {
+                    // 1. Prepare bounds variables (using System.Numerics to match data)
+                    var totalMin = new System.Numerics.Vector3(float.MaxValue);
+                    var totalMax = new System.Numerics.Vector3(float.MinValue);
+                    bool hasVertices = false;
+
+                    // 2. Populate Meshes and calculate bounds
                     for (int i = 0; i < result.Meshes.Count; i++)
                     {
                         var data = result.Meshes[i];
                         var mesh3d = CreateMesh3D(data);
                         _modelGroup.Children.Add(mesh3d);
 
-                        var meshVm = new ForzaMeshViewModel { Name = data.Name, Id = i, IsVisible = true, Data = data };
+                        var meshVm = new ForzaMeshViewModel
+                        {
+                            Name = data.Name,
+                            Id = i,
+                            IsVisible = true,
+                            Data = data
+                        };
+
                         _meshRenderMap[meshVm] = mesh3d;
                         meshVm.PropertyChanged += MeshVm_PropertyChanged;
                         Meshes.Add(meshVm);
+
+                        // Update Bounds manually
+                        if (data.Positions != null)
+                        {
+                            foreach (var p in data.Positions)
+                            {
+                                totalMin = System.Numerics.Vector3.Min(totalMin, p);
+                                totalMax = System.Numerics.Vector3.Max(totalMax, p);
+                                hasVertices = true;
+                            }
+                        }
                     }
 
-                    if (Meshes.Count > 0) _viewport.Camera.ZoomExtents(_viewport, 200);
+                    // 3. Camera Logic (Only if we have data)
+                    if (hasVertices && _viewport.Camera is PerspectiveCamera pCam)
+                    {
+                        // Convert System.Numerics vectors to SharpDX vectors
+                        var min = new SDX.Vector3(totalMin.X, totalMin.Y, totalMin.Z);
+                        var max = new SDX.Vector3(totalMax.X, totalMax.Y, totalMax.Z);
+
+                        var center = (max + min) * 0.5f;
+                        var sizeVec = max - min;
+                        var diagonal = sizeVec.Length();
+
+                        // Safety: Prevent zero-size issues
+                        if (diagonal < 0.1f) diagonal = 10.0f;
+
+                        // Calculate Distance
+                        var fovRad = pCam.FieldOfView * (Math.PI / 180.0);
+                        var radius = diagonal / 2.0;
+                        var dist = radius / Math.Sin(fovRad / 2.0);
+
+                        // Apply Padding (2.0x fits comfortably)
+                        dist *= 2.0f;
+
+                        // Preserve existing camera angle
+                        var dir = pCam.LookDirection;
+                        if (dir.LengthSquared() < 0.001f) dir = new SDX.Vector3(-1, -1, -1);
+                        dir.Normalize();
+
+                        // Set new position
+                        pCam.Position = center - (dir * (float)dist);
+                        pCam.LookDirection = dir * (float)dist;
+                    }
+
                     IsLoading = false;
                 });
             }
-            catch { IsLoading = false; }
+            catch
+            {
+                IsLoading = false;
+            }
         }
 
         private void MeshVm_PropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -164,7 +241,7 @@ namespace ForzaTools.ForzaAnalyzer.Views
             {
                 Geometry = geometry,
                 Material = new PhongMaterial { DiffuseColor = new SDX.Color4((float)rnd.NextDouble(), (float)rnd.NextDouble(), (float)rnd.NextDouble(), 1.0f) },
-                CullMode = SDX.Direct3D11.CullMode.Back
+                CullMode = SDX.Direct3D11.CullMode.None
             };
         }
 

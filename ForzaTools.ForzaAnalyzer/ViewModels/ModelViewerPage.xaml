@@ -39,7 +39,7 @@
                                         </StackPanel>
                                     </Expander.Header>
                                     <Expander.Content>
-                                        <ListView ItemsSource="{x:Bind Files}" SelectionChanged="FileList_SelectionChanged" SelectionMode="Single">
+                                        <ListView ItemsSource="{x:Bind Files}" IsItemClickEnabled="True" ItemClick="FileList_ItemClick" SelectionMode="Single">
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:FileViewModel">
                                                     <StackPanel Orientation="Horizontal" Spacing="8" Padding="2">

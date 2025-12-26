@@ -26,6 +26,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Content Include="fm.ico" />
 		<Content Include="Assets\SplashScreen.scale-200.png" />
 		<Content Include="Assets\LockScreenLogo.scale-200.png" />
 		<Content Include="Assets\Square150x150Logo.scale-200.png" />
@@ -62,11 +63,12 @@
 
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+		<PackageReference Include="HelixToolkit" Version="3.1.2" />
 		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7175" />
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.251106002" />
 		<PackageReference Include="Syroot.BinaryData" Version="5.2.2" />
 
-		<PackageReference Include="HelixToolkit.WinUI" Version="2.25.0" />
+		<PackageReference Include="HelixToolkit.WinUI" Version="2.27.3" />
 		<PackageReference Include="SharpDX.Mathematics" Version="4.2.0" />
 	</ItemGroup>
 
@@ -114,5 +116,7 @@
 		<PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
 		<PackageIcon>328e3904-e6d2-4cee-8c47-e651271f6be0.png</PackageIcon>
 		<Title>ForzaTech Studio</Title>
+		<ApplicationIcon>fm.ico</ApplicationIcon>
+		<AssemblyName>ForzaTools.ForzaAnalyzer</AssemblyName>
 	</PropertyGroup>
 </Project>

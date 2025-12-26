@@ -59,6 +59,14 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         }
 
         [RelayCommand]
+        public void RefreshMaterials()
+        {
+            StatusMessage = "Refreshing...";
+            LoadExistingMaterials();
+            StatusMessage = "Library refreshed.";
+        }
+
+        [RelayCommand]
         public async Task ExtractMaterialsAsync()
         {
             var picker = new FileOpenPicker();
