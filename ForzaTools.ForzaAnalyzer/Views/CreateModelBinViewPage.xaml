@@ -5,58 +5,51 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:viewmodels="using:ForzaTools.ForzaAnalyzer.ViewModels"
-    mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    mc:Ignorable="d">
 
     <Page.DataContext>
-        <viewmodels:CreateModelBinViewModel x:Name="ViewModel"/>
+        <viewmodels:CreateModelBinViewModel />
     </Page.DataContext>
 
-    <Grid Padding="24">
-        <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left">
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <StackPanel Spacing="20" HorizontalAlignment="Center" VerticalAlignment="Center">
 
-            <TextBlock Text="OBJ to ModelBin Converter" Style="{StaticResource TitleTextBlockStyle}"/>
+            <TextBlock Text="Create Test ModelBin" 
+                       Style="{StaticResource TitleTextBlockStyle}" 
+                       HorizontalAlignment="Center"/>
 
-            <TextBlock Text="Convert standard .obj 3D models into Forza Horizon 4/5 compatible ModelBin files." 
-                       TextWrapping="Wrap" Style="{StaticResource BodyTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            <TextBlock Text="Generates a hardcoded 3D Cube compatible with FH4/FH5." 
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       HorizontalAlignment="Center"/>
 
-            <StackPanel Spacing="8">
-                <TextBlock Text="Input File (.obj)" Style="{StaticResource SubtitleTextBlockStyle}"/>
-                <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
-                    <TextBox Text="{x:Bind ViewModel.InputFilePath, Mode=OneWay}" 
-                             PlaceholderText="Select an .obj file..." 
-                             IsReadOnly="True"/>
-                    <Button Grid.Column="1" Command="{x:Bind ViewModel.PickInputFileCommand}" Content="Browse..."/>
-                </Grid>
-            </StackPanel>
+            <TextBox Header="Output Filename" 
+                     Text="{Binding FileName, Mode=TwoWay}" 
+                     Width="300" />
 
-            <StackPanel Spacing="8">
-                <TextBlock Text="Material" Style="{StaticResource SubtitleTextBlockStyle}"/>
-                <ComboBox ItemsSource="{x:Bind ViewModel.Materials}"
-                          SelectedItem="{x:Bind ViewModel.SelectedMaterial, Mode=TwoWay}"
-                          HorizontalAlignment="Stretch"
-                          PlaceholderText="Select a material..."/>
-            </StackPanel>
-
-            <StackPanel Spacing="12">
-                <Button Command="{x:Bind ViewModel.ConvertModelCommand}" 
-                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
-                        Style="{StaticResource AccentButtonStyle}" 
-                        HorizontalAlignment="Stretch">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" 
-                                      Width="16" Height="16" 
-                                      Foreground="White"/>
-                        <TextBlock Text="Convert to ModelBin"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
+            <Button Content="Generate Cube" 
+                    Command="{Binding CreateCubeCommand}" 
+                    Style="{StaticResource AccentButtonStyle}"
+                    HorizontalAlignment="Stretch"
+                    Height="40"/>
 
             <InfoBar Title="Status" 
+                     Message="{Binding StatusMessage}" 
                      IsOpen="True" 
                      IsClosable="False"
-                     Severity="Informational"
-                     Message="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"/>
+                     Width="300"/>
+            <TextBlock Text="Material Selection" 
+               Style="{StaticResource BodyStrongTextBlockStyle}" 
+               Margin="0,0,0,5"/>
+
+            <ComboBox ItemsSource="{Binding AvailableMaterials}" 
+              SelectedItem="{Binding SelectedMaterial}"
+              HorizontalAlignment="Stretch"
+              PlaceholderText="Choose a material..."/>
+
+            <TextBlock Text="This material will be applied to all meshes in the generated model."
+               Style="{StaticResource CaptionTextBlockStyle}"
+               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+               Margin="0,5,0,0"/>
         </StackPanel>
     </Grid>
 </Page>
