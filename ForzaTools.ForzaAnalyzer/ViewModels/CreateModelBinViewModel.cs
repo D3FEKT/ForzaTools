@@ -21,7 +21,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         public async Task CreateCubeAsync()
         {
             var picker = new FileSavePicker();
-
+            
             // WinUI 3 Window Handle logic
             var window = App.MainWindow;
             var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
@@ -41,8 +41,8 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             try
             {
                 StatusMessage = "Building Cube...";
-
-                await Task.Run(() =>
+                
+                await Task.Run(() => 
                 {
                     _builderService.BuildTestCube(file.Path);
                 });

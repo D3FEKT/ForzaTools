@@ -15,6 +15,7 @@ public class VertexLayoutBlob : BundleBlob
 
     public override void ReadBlobData(BinaryStream bs)
     {
+        // ... [Keep existing ReadBlobData] ...
         ushort semanticCount = bs.ReadUInt16();
         for (int i = 0; i < semanticCount; i++)
         {
@@ -42,6 +43,7 @@ public class VertexLayoutBlob : BundleBlob
 
     public override void SerializeBlobData(BinaryStream bs)
     {
+        // ... [Keep existing SerializeBlobData] ...
         bs.WriteUInt16((ushort)SemanticNames.Count);
         foreach (string semanticName in SemanticNames)
         {
@@ -66,34 +68,115 @@ public class VertexLayoutBlob : BundleBlob
 
     public override void CreateModelBinBlobData(BinaryStream bs)
     {
-        // 1. Semantic Names
-        bs.WriteUInt16((ushort)SemanticNames.Count);
-        foreach (string semanticName in SemanticNames)
-        {
-            bs.WriteString(semanticName, StringCoding.Int32CharCount);
-        }
+        // 1. Semantic Names Length: 5
+        bs.WriteUInt16(5);
 
-        // 2. Elements
-        bs.WriteUInt16((ushort)Elements.Count);
-        foreach (D3D12_INPUT_LAYOUT_DESC element in Elements)
-        {
-            element.Serialize(bs);
-        }
+        // 2. Semantic Names
+        WriteLayoutString(bs, "POSITION");
+        WriteLayoutString(bs, "NORMAL");
+        WriteLayoutString(bs, "TEXCOORD");
+        WriteLayoutString(bs, "TANGENT");
+        WriteLayoutString(bs, "COLOR");
 
-        // 3. Packed Formats (Write all formats corresponding to elements)
-        foreach (DXGI_FORMAT format in PackedFormats)
-        {
-            bs.WriteInt32((int)format);
-        }
+        // 3. Num Elements: 11
+        bs.WriteUInt16(11);
 
-        // 4. Flags
-        bs.WriteUInt32(Flags);
+        // 4. Element Descriptors
+        WriteElement(bs, 0, 0, 0, 0, 13, -1, 0); // POSITION
+        WriteElement(bs, 1, 0, 1, 0, 37, -1, 0); // NORMAL
+        WriteElement(bs, 2, 0, 1, 0, 35, -1, 0); // TEXCOORD
+
+        // TANGENTS & COLORS
+        WriteElement(bs, 3, 0, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 1, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 2, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 3, 1, 0, 35, -1, 0);
+        WriteElement(bs, 3, 4, 1, 0, 35, -1, 0);
+
+        WriteElement(bs, 4, 0, 1, 0, 24, -1, 0);
+        WriteElement(bs, 4, 1, 1, 0, 24, -1, 0);
+        WriteElement(bs, 4, 2, 1, 0, 24, -1, 0);
+
+        // 5. Element Formats
+        bs.WriteInt32(49); bs.WriteInt32(52); bs.WriteInt32(46);
+        bs.WriteInt32(46); bs.WriteInt32(46); bs.WriteInt32(46); bs.WriteInt32(46);
+        bs.WriteInt32(48); bs.WriteInt32(48); bs.WriteInt32(48); bs.WriteInt32(22);
+
+        // 6. Semantic Bitfield
+        bs.WriteUInt32(0x000004FF);
     }
 
-    // REMOVED: CreateModelBinMetadatas override. 
-    // This allows ModelBuilderService to manually set the IdentifierMetadata ID without it being overwritten.
+    private void WriteLayoutString(BinaryStream bs, string str)
+    {
+        // FIXED: Use Int32CharCount to write 4-byte length prefix
+        bs.WriteString(str, StringCoding.Int32CharCount);
+    }
+
+    private void WriteElement(BinaryStream bs, ushort nameIdx, ushort semIdx, ushort slot, ushort slotClass, int format, int offset, int step)
+    {
+        bs.WriteUInt16(nameIdx);
+        bs.WriteUInt16(semIdx);
+        bs.WriteUInt16(slot);
+        bs.WriteUInt16(slotClass);
+        bs.WriteInt32(format);
+        bs.WriteInt32(offset);
+        bs.WriteInt32(step);
+    }
+
+    public override void CreateModelBinMetadatas(BinaryStream bs)
+    {
+        this.Metadatas.Clear();
+
+        // FIXED: Add metadata to list instead of writing directly
+        this.Metadatas.Add(new IdentifierMetadata
+        {
+            Tag = BundleMetadata.TAG_METADATA_Identifier,
+            Id = this.Id
+        });
+
+        base.CreateModelBinMetadatas(bs);
+    }
+
+    public byte GetTotalVertexSize()
+    {
+        byte size = 0;
+        for (int i = 0; i < Elements.Count; i++)
+        {
+            size += GetSizeOfElementFormat(PackedFormats[i]);
+            if (i + 1 < Elements.Count && size % 4 != 0)
+            {
+                if (GetSizeOfElementFormat(PackedFormats[i + 1]) >= 4)
+                    size += (byte)(size % 4);
+            }
+        }
+        return size;
+    }
+
+    private static byte GetSizeOfElementFormat(DXGI_FORMAT format)
+    {
+        return format switch
+        {
+            DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT => 16,
+            DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT => 12,
+            DXGI_FORMAT.DXGI_FORMAT_R32G32_FLOAT => 8,
+            DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R16G16_UNORM => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R16G16_SNORM => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R16G16_FLOAT => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R8G8_UNORM => 2,
+            DXGI_FORMAT.DXGI_FORMAT_R8G8_SINT => 2,
+            DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R11G11B10_FLOAT => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS => 4,
+            DXGI_FORMAT.DXGI_FORMAT_R8G8_TYPELESS => 2,
+            DXGI_FORMAT.DXGI_FORMAT_X32_TYPELESS_G8X24_UINT => 8,
+            _ => 4,
+        };
+    }
 }
 
+// ... [Keep D3D12_INPUT_LAYOUT_DESC class] ...
 public class D3D12_INPUT_LAYOUT_DESC
 {
     public short SemanticNameIndex;
