@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using ForzaTools.Bundles;
 using ForzaTools.Bundles.Blobs;
@@ -12,272 +11,263 @@ namespace ForzaTools.ForzaAnalyzer.Services
 {
     public class ModelBuilderService
     {
-        private readonly GeometryProcessingService _geometryService;
-
-        public ModelBuilderService()
+        public void BuildTestCube(string outputPath)
         {
-            _geometryService = new GeometryProcessingService();
-        }
-
-        public void BuildCompatibleModelBin(string outputPath, GeometryInput input, string materialName)
-        {
-            // 1. Process Geometry
-            var processed = _geometryService.ProcessGeometry(input);
+            // 1. Define Cube Geometry (24 Vertices for Flat Shading)
+            var vertices = GetCubeVertices();
+            var indices = GetCubeIndices();
 
             // 2. Initialize Bundle
             var bundle = new Bundle
             {
                 VersionMajor = 1,
-                VersionMinor = 9
+                VersionMinor = 9 // FH4/FH5 Standard
             };
 
-            // --- Define Metadata IDs for Linking ---
-            // The game uses these IDs to link meshes to buffers/layouts
-            int idLink_LayoutFull = 0;
-            int idLink_LayoutPos = -1;
+            // IDs for linkage
+            int indexBuffId = 1000;
+            int vertexBuffId = 2000;
+            // Layout is linked by index in blob list, not ID
 
-            int idLink_IB = 0;
-            int idLink_VB_Pos = -1;  // First Buffer (XYZW)
-            int idLink_VB_Norm = 0;  // Second Buffer (Norm/UV)
+            // 3. Create Blobs
 
-            // --- 0. Skeleton ---
-            var skeletonBlob = new SkeletonBlob { Tag = Bundle.TAG_BLOB_Skeleton, VersionMajor = 1, VersionMinor = 0 };
-            skeletonBlob.Bones.Add(new Bone { Name = "root", ParentId = -1, Matrix = Matrix4x4.Identity });
-            bundle.Blobs.Add(skeletonBlob);
+            // A. Index Buffer
+            var indexBlob = CreateIndexBuffer(indices);
+            AddIdentifier(indexBlob, (uint)indexBuffId);
+            bundle.Blobs.Add(indexBlob);
 
-            // --- 1. Morph ---
-            bundle.Blobs.Add(new MorphBlob { Tag = Bundle.TAG_BLOB_Morph, VersionMajor = 0, VersionMinor = 0 });
+            // B. Vertex Layout (Position, Normal, TexCoord)
+            var layoutBlob = CreateStandardLayout();
+            AddIdentifier(layoutBlob, 3000); // ID optional for layout but good practice
+            bundle.Blobs.Add(layoutBlob);
 
-            // --- 2-7. Mesh Blobs ---
-            for (int i = 0; i < 6; i++)
+            // C. Vertex Buffer
+            var vertexBlob = CreateVertexBuffer(vertices);
+            AddIdentifier(vertexBlob, (uint)vertexBuffId);
+            bundle.Blobs.Add(vertexBlob);
+
+            // D. Mesh Blob
+            var meshBlob = new MeshBlob
             {
-                var meshBlob = new MeshBlob
-                {
-                    Tag = Bundle.TAG_BLOB_Mesh,
-                    VersionMajor = 1,
-                    VersionMinor = 9,
-
-                    // Link to Index Buffer by Metadata ID
-                    IndexBufferIndex = idLink_IB,
-
-                    // Link to Full Layout by Metadata ID
-                    VertexLayoutIndex = idLink_LayoutFull,
-
-                    IndexCount = processed.IndexData.Length,
-                    PrimCount = processed.IndexData.Length / 3,
-
-                    // Set ReferencedVertexCount to total vertices
-                    ReferencedVertexCount = (uint)processed.PositionData.Length,
-
-                    IsOpaque = true,
-                    IsShadow = true,
-                    Is32BitIndices = true,
-                    Topology = 4,
-                    PositionScale = processed.PositionScale,
-                    PositionTranslate = processed.PositionTranslate,
-                    NameSuffix = i.ToString()
-                };
-
-                switch (i)
-                {
-                    case 0: meshBlob.LOD_LOD0 = true; break;
-                    case 1: meshBlob.LOD_LOD1 = true; break;
-                    case 2: meshBlob.LOD_LOD2 = true; break;
-                    case 3: meshBlob.LOD_LOD3 = true; break;
-                    case 4: meshBlob.LOD_LOD4 = true; break;
-                    case 5: meshBlob.LOD_LOD5 = true; break;
-                }
-
-                // Add Buffer Linkages using Metadata IDs
-                // Buffer 1: Position (ID -1)
-                meshBlob.VertexBuffers.Add(new MeshBlob.VertexBufferUsage
-                {
-                    Index = idLink_VB_Pos,
-                    InputSlot = 0,
-                    Stride = 8,
-                    Offset = 0
-                });
-
-                // Buffer 2: Normal/UV (ID 0)
-                meshBlob.VertexBuffers.Add(new MeshBlob.VertexBufferUsage
-                {
-                    Index = idLink_VB_Norm,
-                    InputSlot = 1,
-                    Stride = 40,
-                    Offset = 0
-                });
-
-                meshBlob.Metadatas.Add(new NameMetadata { Tag = BundleMetadata.TAG_METADATA_Name, Name = $"custommod_LOD{i}" });
-                meshBlob.Metadatas.Add(new BoundaryBoxMetadata { Tag = BundleMetadata.TAG_METADATA_BBox, Min = processed.BoundingBoxMin, Max = processed.BoundingBoxMax });
-
-                bundle.Blobs.Add(meshBlob);
-            }
-
-            // --- 8. Material ---
-            byte[] matData = MaterialLibrary.GetMaterialData(materialName);
-            var materialBlob = new MaterialBlob
-            {
-                Tag = Bundle.TAG_BLOB_MaterialInstance,
                 VersionMajor = 1,
-                VersionMinor = 0,
-                CustomBlobData = matData
-            };
-            materialBlob.Metadatas.Add(new NameMetadata { Tag = BundleMetadata.TAG_METADATA_Name, Name = materialName });
-            materialBlob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = 0 });
-            bundle.Blobs.Add(materialBlob);
+                VersionMinor = 9,
 
-            // --- 9. Index Buffer (Metadata ID 0) ---
-            byte[] flattenedIndices = processed.IndexData.SelectMany(b => b).ToArray();
-            var ibBlob = new IndexBufferBlob
-            {
-                Tag = Bundle.TAG_BLOB_IndexBuffer,
-                VersionMajor = 1,
-                VersionMinor = 0,
-                Data = flattenedIndices
-            };
-            ibBlob.Header = new BufferHeader
-            {
-                Length = processed.IndexData.Length,
-                Stride = 4,
-                NumElements = 1,
-                Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
-                Data = processed.IndexData
-            };
-            ibBlob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)idLink_IB) });
-            bundle.Blobs.Add(ibBlob);
+                // Linkages
+                VertexLayoutIndex = bundle.Blobs.IndexOf(layoutBlob),
+                IndexBufferIndex = indexBuffId,
+                IndexBufferDrawOffset = 0,
+                IndexBufferOffset = 0,
 
-            // --- 10. VLay (Full - Metadata ID 0) ---
-            bundle.Blobs.Add(CreateLayoutFull(idLink_LayoutFull));
+                // Counts
+                IndexCount = indices.Length,
+                PrimCount = indices.Length / 3,
 
-            // --- 11. VLay (Position Only - Metadata ID -1) ---
-            bundle.Blobs.Add(CreateLayoutPosOnly(idLink_LayoutPos));
+                // Vertex Info
+                IndexedVertexOffset = 0,
+                Is32BitIndices = true,
+                Topology = 4, // TriangleList
 
-            // --- 12. VB Position (Metadata ID -1) ---
-            byte[] flattenedPos = processed.PositionData.SelectMany(b => b).ToArray();
-            var vbPos = new VertexBufferBlob
-            {
-                Tag = Bundle.TAG_BLOB_VertexBuffer,
-                VersionMajor = 1,
-                VersionMinor = 0,
-                Data = flattenedPos
-            };
-            vbPos.Header = new BufferHeader
-            {
-                Length = processed.PositionData.Length,
-                Stride = 8,
-                NumElements = 1,
-                Format = DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_SNORM,
-                Data = processed.PositionData
-            };
-            // Cast -1 to uint for Metadata ID
-            vbPos.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)idLink_VB_Pos) });
-            bundle.Blobs.Add(vbPos);
+                // Render Flags (Force Visible)
+                LODFlags = 0xFFFF,
+                IsOpaque = true,
+                IsShadow = true,
 
-            // --- 13. VB Norm/UV (Metadata ID 0) ---
-            byte[] flattenedNorm = processed.NormalUVData.SelectMany(b => b).ToArray();
-            var vbNorm = new VertexBufferBlob
-            {
-                Tag = Bundle.TAG_BLOB_VertexBuffer,
-                VersionMajor = 1,
-                VersionMinor = 0,
-                Data = flattenedNorm
+                // Transform Defaults
+                PositionScale = Vector4.One,
+                PositionTranslate = Vector4.Zero
             };
-            vbNorm.Header = new BufferHeader
-            {
-                Length = processed.NormalUVData.Length,
-                Stride = 40,
-                NumElements = 1,
-                Format = (DXGI_FORMAT)37,
-                Data = processed.NormalUVData
-            };
-            vbNorm.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)idLink_VB_Norm) });
-            bundle.Blobs.Add(vbNorm);
 
-            // --- 14. Model ---
+            // Link Vertex Buffer
+            meshBlob.VertexBuffers.Add(new MeshBlob.VertexBufferUsage
+            {
+                Index = vertexBuffId,
+                InputSlot = 0,
+                Offset = 0,
+                Stride = 32 // 12+12+8
+            });
+
+            // Mesh Metadata
+            meshBlob.Metadatas.Add(new NameMetadata { Name = "TestCube", Version = 0 });
+            meshBlob.Metadatas.Add(CalculateBoundingBox(vertices));
+
+            bundle.Blobs.Add(meshBlob);
+
+            // E. Model Blob (Root)
             var modelBlob = new ModelBlob
             {
-                Tag = Bundle.TAG_BLOB_Model,
                 VersionMajor = 1,
-                VersionMinor = 2,
-                MeshCount = 6,
-                BuffersCount = 3,
-                VertexLayoutCount = 2,
-                MaterialCount = 1,
-                HasLOD = true,
-                MaxLOD = 5,
+                VersionMinor = 9,
+                MeshCount = 1,
+                BuffersCount = 2,
+                VertexLayoutCount = 1,
+                MaterialCount = 0,
+                HasLOD = false,
                 LODFlags = 0xFFFF
             };
-            modelBlob.Metadatas.Add(new BoundaryBoxMetadata { Tag = BundleMetadata.TAG_METADATA_BBox, Min = processed.BoundingBoxMin, Max = processed.BoundingBoxMax });
-            bundle.Blobs.Add(modelBlob);
+            // ModelBlob must be first usually
+            bundle.Blobs.Insert(0, modelBlob);
 
-            // 3. Write
+            // 4. Write to File
             using (var fs = new FileStream(outputPath, FileMode.Create))
             {
                 bundle.CreateModelBin(fs);
             }
         }
 
-        private VertexLayoutBlob CreateLayoutFull(int id)
+        // --- Helpers ---
+
+        private IndexBufferBlob CreateIndexBuffer(int[] indices)
         {
-            var blob = new VertexLayoutBlob { Tag = Bundle.TAG_BLOB_VertexLayout, VersionMajor = 1, VersionMinor = 1 };
+            var blob = new IndexBufferBlob();
+            // Create jagged array: 1 element per index (simplest for serializer)
+            var data = new byte[indices.Length][];
+            for (int i = 0; i < indices.Length; i++)
+                data[i] = BitConverter.GetBytes(indices[i]);
 
-            // 1. Semantics
-            blob.SemanticNames.AddRange(new[] { "POSITION", "NORMAL", "TEXCOORD", "TANGENT", "COLOR" });
-
-            // 2. Elements
-            blob.Elements.Add(CreateElement(0, 0, 0, 0, 13)); // Pos
-            blob.Elements.Add(CreateElement(1, 0, 1, 0, 37)); // Normal
-            blob.Elements.Add(CreateElement(2, 0, 1, 0, 35)); // TexCoord
-            for (int i = 0; i < 5; i++) blob.Elements.Add(CreateElement(3, (short)i, 1, 0, 35)); // Tangents
-            for (int i = 0; i < 3; i++) blob.Elements.Add(CreateElement(4, (short)i, 1, 0, 24)); // Colors
-
-            // 3. Formats
-            int[] formats = { 49, 52, 46, 46, 46, 46, 46, 48, 48, 48, 22 };
-            foreach (var f in formats) blob.PackedFormats.Add((DXGI_FORMAT)f);
-
-            // 4. Flags
-            blob.Flags = 0x000004FF;
-
-            // 5. Metadata ID
-            blob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)id) });
-
-            return blob;
-        }
-
-        private VertexLayoutBlob CreateLayoutPosOnly(int id)
-        {
-            var blob = new VertexLayoutBlob { Tag = Bundle.TAG_BLOB_VertexLayout, VersionMajor = 1, VersionMinor = 1 };
-
-            // 1. Semantics
-            blob.SemanticNames.Add("POSITION");
-
-            // 2. Elements
-            blob.Elements.Add(CreateElement(0, 0, 0, 0, 13));
-
-            // 3. Formats
-            blob.PackedFormats.Add((DXGI_FORMAT)49);
-
-            // 4. Flags
-            blob.Flags = 0;
-
-            // 5. Metadata ID
-            blob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)id) });
-
-            return blob;
-        }
-
-        private D3D12_INPUT_LAYOUT_DESC CreateElement(short nameIdx, short semIdx, short slot, short slotClass, int format, int offset = -1, int step = 0)
-        {
-            return new D3D12_INPUT_LAYOUT_DESC
+            blob.Header = new BufferHeader
             {
-                SemanticNameIndex = nameIdx,
-                SemanticIndex = semIdx,
-                InputSlot = slot,
-                InputSlotClass = slotClass,
-                Format = (DXGI_FORMAT)format,
-                AlignedByteOffset = offset,
-                InstanceDataStepRate = step
+                Length = indices.Length,
+                Size = indices.Length * 4,
+                Stride = 4,
+                NumElements = 1,
+                Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
+                Data = data
             };
+            return blob;
+        }
+
+        private VertexBufferBlob CreateVertexBuffer(Vertex[] vertices)
+        {
+            var blob = new VertexBufferBlob();
+            int stride = 32;
+            var data = new byte[vertices.Length][];
+
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                var ms = new MemoryStream();
+                using (var bw = new BinaryWriter(ms))
+                {
+                    var v = vertices[i];
+                    bw.Write(v.Position.X); bw.Write(v.Position.Y); bw.Write(v.Position.Z);
+                    bw.Write(v.Normal.X); bw.Write(v.Normal.Y); bw.Write(v.Normal.Z);
+                    bw.Write(v.UV.X); bw.Write(v.UV.Y);
+                }
+                data[i] = ms.ToArray();
+            }
+
+            blob.Header = new BufferHeader
+            {
+                Length = vertices.Length,
+                Size = vertices.Length * stride,
+                Stride = (ushort)stride,
+                NumElements = (byte)vertices.Length,
+                Data = data
+            };
+            return blob;
+        }
+
+        private VertexLayoutBlob CreateStandardLayout()
+        {
+            var blob = new VertexLayoutBlob();
+            blob.SemanticNames = new List<string> { "POSITION", "NORMAL", "TEXCOORD" };
+
+            blob.Elements.Add(new D3D12_INPUT_LAYOUT_DESC
+            {
+                SemanticNameIndex = 0,
+                Format = DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT,
+                InputSlot = 0,
+                AlignedByteOffset = 0
+            });
+            blob.Elements.Add(new D3D12_INPUT_LAYOUT_DESC
+            {
+                SemanticNameIndex = 1,
+                Format = DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT,
+                InputSlot = 0,
+                AlignedByteOffset = 12
+            });
+            blob.Elements.Add(new D3D12_INPUT_LAYOUT_DESC
+            {
+                SemanticNameIndex = 2,
+                Format = DXGI_FORMAT.DXGI_FORMAT_R32G32_FLOAT,
+                InputSlot = 0,
+                AlignedByteOffset = 24
+            });
+
+            // Packed Formats (Required for some games)
+            blob.PackedFormats = new List<DXGI_FORMAT> {
+                DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT,
+                DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT,
+                DXGI_FORMAT.DXGI_FORMAT_R32G32_FLOAT
+            };
+
+            return blob;
+        }
+
+        private void AddIdentifier(BundleBlob blob, uint id)
+        {
+            blob.Metadatas.Add(new IdentifierMetadata { Id = id, Version = 0 });
+        }
+
+        private BoundaryBoxMetadata CalculateBoundingBox(Vertex[] verts)
+        {
+            Vector3 min = new Vector3(float.MaxValue);
+            Vector3 max = new Vector3(float.MinValue);
+            foreach (var v in verts)
+            {
+                min = Vector3.Min(min, v.Position);
+                max = Vector3.Max(max, v.Position);
+            }
+            return new BoundaryBoxMetadata { Min = min, Max = max };
+        }
+
+        // --- Geometry Data ---
+
+        private struct Vertex { public Vector3 Position; public Vector3 Normal; public Vector2 UV; }
+
+        private Vertex[] GetCubeVertices()
+        {
+            // 24 vertices for hard edges
+            var verts = new List<Vertex>();
+
+            void AddFace(Vector3 normal, Vector3 v1, Vector3 v2, Vector3 v3, Vector3 v4)
+            {
+                verts.Add(new Vertex { Position = v1, Normal = normal, UV = new Vector2(0, 0) });
+                verts.Add(new Vertex { Position = v2, Normal = normal, UV = new Vector2(1, 0) });
+                verts.Add(new Vertex { Position = v3, Normal = normal, UV = new Vector2(0, 1) });
+                verts.Add(new Vertex { Position = v4, Normal = normal, UV = new Vector2(1, 1) });
+            }
+
+            Vector3 p0 = new Vector3(-1, -1, -1);
+            Vector3 p1 = new Vector3(1, -1, -1);
+            Vector3 p2 = new Vector3(-1, 1, -1);
+            Vector3 p3 = new Vector3(1, 1, -1);
+            Vector3 p4 = new Vector3(-1, -1, 1);
+            Vector3 p5 = new Vector3(1, -1, 1);
+            Vector3 p6 = new Vector3(-1, 1, 1);
+            Vector3 p7 = new Vector3(1, 1, 1);
+
+            AddFace(Vector3.UnitZ, p4, p5, p6, p7); // Front
+            AddFace(-Vector3.UnitZ, p1, p0, p3, p2); // Back
+            AddFace(Vector3.UnitY, p6, p7, p2, p3); // Top
+            AddFace(-Vector3.UnitY, p0, p1, p4, p5); // Bottom
+            AddFace(Vector3.UnitX, p5, p1, p7, p3); // Right
+            AddFace(-Vector3.UnitX, p0, p4, p2, p6); // Left
+
+            return verts.ToArray();
+        }
+
+        private int[] GetCubeIndices()
+        {
+            // 6 faces, 2 triangles each, 4 verts per face (0,1,2, 2,1,3 pattern for strip-like or 0,1,2 1,3,2)
+            // Using standard Quad -> Tri pattern (0,1,2, 1,3,2) relative to face start
+            var indices = new List<int>();
+            for (int i = 0; i < 6; i++)
+            {
+                int baseIdx = i * 4;
+                indices.Add(baseIdx + 0); indices.Add(baseIdx + 1); indices.Add(baseIdx + 2);
+                indices.Add(baseIdx + 1); indices.Add(baseIdx + 3); indices.Add(baseIdx + 2);
+            }
+            return indices.ToArray();
         }
     }
 }

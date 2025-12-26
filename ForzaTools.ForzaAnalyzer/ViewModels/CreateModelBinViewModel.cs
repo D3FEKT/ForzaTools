@@ -1,142 +1,57 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
-using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using ForzaTools.ForzaAnalyzer.Services;
-using Microsoft.UI.Xaml;
 
 namespace ForzaTools.ForzaAnalyzer.ViewModels
 {
     public partial class CreateModelBinViewModel : ObservableObject
     {
-        private readonly ModelBuilderService _builderService = new ModelBuilderService();
-        private readonly ObjParserService _parserService = new ObjParserService();
+        private ModelBuilderService _builderService = new ModelBuilderService();
 
         [ObservableProperty]
-        private string _statusMessage = "Ready to convert.";
+        private string _statusMessage = "Ready to generate.";
 
         [ObservableProperty]
-        private string _inputFilePath;
-
-        [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(IsNotBusy))]
-        private bool _isBusy;
-
-        public bool IsNotBusy => !IsBusy;
-
-        // --- Material Selection ---
-        public ObservableCollection<string> Materials { get; } = new ObservableCollection<string>();
-
-        [ObservableProperty]
-        private string _selectedMaterial;
-
-        public CreateModelBinViewModel()
-        {
-            LoadMaterials();
-        }
-
-        private void LoadMaterials()
-        {
-            Materials.Clear();
-            var names = MaterialLibrary.GetMaterialNames();
-
-            if (names.Count == 0)
-            {
-                StatusMessage = "No materials found in Materials/materials.json.";
-                return;
-            }
-
-            foreach (var name in names)
-            {
-                Materials.Add(name);
-            }
-
-            // Select the first one by default to avoid null errors
-            SelectedMaterial = Materials.First();
-        }
+        private string _fileName = "TestCube.modelbin";
 
         [RelayCommand]
-        public async Task PickInputFileAsync()
+        public async Task CreateCubeAsync()
         {
-            var picker = new FileOpenPicker();
+            var picker = new FileSavePicker();
+
+            // WinUI 3 Window Handle logic
             var window = App.MainWindow;
             var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
             WinRT.Interop.InitializeWithWindow.Initialize(picker, hWnd);
 
-            picker.ViewMode = PickerViewMode.List;
             picker.SuggestedStartLocation = PickerLocationId.Desktop;
-            picker.FileTypeFilter.Add(".obj");
+            picker.SuggestedFileName = FileName;
+            picker.FileTypeChoices.Add("Forza ModelBin", new[] { ".modelbin" });
 
-            var file = await picker.PickSingleFileAsync();
-            if (file != null)
-            {
-                InputFilePath = file.Path;
-                StatusMessage = $"Selected: {file.Name}. Ready to convert.";
-            }
-        }
-
-        [RelayCommand]
-        public async Task ConvertModelAsync()
-        {
-            if (string.IsNullOrEmpty(InputFilePath) || !File.Exists(InputFilePath))
-            {
-                StatusMessage = "Please select a valid .obj file first.";
-                return;
-            }
-
-            if (string.IsNullOrEmpty(SelectedMaterial))
-            {
-                StatusMessage = "Please select a material from the list.";
-                return;
-            }
-
-            // Capture data on UI thread
-            string currentMaterial = SelectedMaterial;
-
-            var savePicker = new FileSavePicker();
-            var window = App.MainWindow;
-            var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
-            WinRT.Interop.InitializeWithWindow.Initialize(savePicker, hWnd);
-
-            savePicker.SuggestedStartLocation = PickerLocationId.Desktop;
-            savePicker.SuggestedFileName = Path.GetFileNameWithoutExtension(InputFilePath) + ".modelbin";
-            savePicker.FileTypeChoices.Add("Forza ModelBin", new[] { ".modelbin" });
-
-            var outputFile = await savePicker.PickSaveFileAsync();
-            if (outputFile == null)
+            var file = await picker.PickSaveFileAsync();
+            if (file == null)
             {
                 StatusMessage = "Operation cancelled.";
                 return;
             }
 
-            IsBusy = true;
-            StatusMessage = "Parsing OBJ file...";
-
             try
             {
+                StatusMessage = "Building Cube...";
+
                 await Task.Run(() =>
                 {
-                    var geometry = _parserService.ParseObj(InputFilePath);
-
-                    App.MainWindow.DispatcherQueue.TryEnqueue(() =>
-                        StatusMessage = $"Building ModelBin with '{currentMaterial}'...");
-
-                    _builderService.BuildCompatibleModelBin(outputFile.Path, geometry, currentMaterial);
+                    _builderService.BuildTestCube(file.Path);
                 });
 
-                StatusMessage = $"Success! Saved to {outputFile.Name}";
+                StatusMessage = $"Success! Saved to {file.Name}";
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Error: {ex.Message}";
-            }
-            finally
-            {
-                IsBusy = false;
             }
         }
     }
