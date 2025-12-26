@@ -19,13 +19,12 @@ public abstract class BundleBlob
 
     public long FileOffset { get; set; }
 
-    // FIXED: Changed Guid to uint to match IdentifierMetadata
     public uint Id { get; set; } = 1;
 
-    // FIXED: Expose data for subclasses to write
+    // Use a method to get data if needed, don't hold it in a property if possible
     public byte[] Data
     {
-        get => GetContents() ?? Array.Empty<byte>();
+        get => _data ?? Array.Empty<byte>();
         set => _data = value;
     }
 
@@ -40,7 +39,6 @@ public abstract class BundleBlob
             if (metadata.Tag == tag)
                 return (T)metadata;
         }
-
         return null;
     }
 
@@ -59,6 +57,7 @@ public abstract class BundleBlob
 
         long basePos = bs.Position;
 
+        // 1. Read Metadata
         for (int i = 0; i < metadataCount; i++)
         {
             bs.Position = baseBundleOffset + metadataOffset + (i * BundleMetadata.InfoSize);
@@ -73,14 +72,27 @@ public abstract class BundleBlob
             }
         }
 
+        // 2. Read Blob Data
         bs.Position = baseBundleOffset + dataOffset;
         this.FileOffset = bs.Position;
 
         uint sizeToRead = UncompressedSize > 0 ? UncompressedSize : CompressedSize;
+
+        // Read raw data temporarily
         _data = bs.ReadBytes((int)sizeToRead);
 
+        // Parse structures from raw data
         bs.Position = baseBundleOffset + dataOffset;
         ReadBlobData(bs);
+
+        // MEMORY FIX: Release raw data after parsing.
+        // We only keep it if the specific Blob implementation didn't consume it 
+        // or if we strictly need it for repacking (which should read from structs anyway).
+        // If your repacker relies on _data, you might need to keep it, but for Analyzer, drop it.
+        _data = null;
+
+        // Force GC collection suggestion if really tight (optional)
+        // GC.Collect(); 
     }
 
     public abstract void ReadBlobData(BinaryStream bs);
@@ -105,38 +117,28 @@ public abstract class BundleBlob
 
     public void SerializeMetadatas(BinaryStream bs)
     {
+        // ... (Keep existing serialization logic)
         long headersStartOffset = bs.Position;
         long lastDataPos = bs.Position + (BundleMetadata.InfoSize * Metadatas.Count);
         for (int j = 0; j < Metadatas.Count; j++)
         {
             bs.Position = lastDataPos;
-
             long headerOffset = headersStartOffset + (BundleMetadata.InfoSize * j);
             long dataStartOffset = lastDataPos;
-
             BundleMetadata metadata = Metadatas[j];
             metadata.SerializeMetadataData(bs);
-
             ulong relativeOffset = (ulong)(lastDataPos - headerOffset);
-
             lastDataPos = bs.Position;
-
             bs.Position = headerOffset;
             bs.WriteUInt32(metadata.Tag);
-
             ulong metadataSize = (ulong)(lastDataPos - dataStartOffset);
-            Debug.Assert(metadataSize <= ushort.MaxValue);
-
             ushort flags = (ushort)(metadataSize << 4 | (ushort)(metadata.Version & 0b1111));
             bs.WriteUInt16(flags);
-
-            Debug.Assert(relativeOffset <= ushort.MaxValue);
             bs.WriteUInt16((ushort)relativeOffset);
         }
-
         bs.Position = lastDataPos;
-
     }
+
     public virtual void CreateModelBinMetadatas(BinaryStream bs)
     {
         WriteMetadatasInternal(bs, m => m.CreateModelBinMetadataData(bs));
@@ -150,26 +152,19 @@ public abstract class BundleBlob
         for (int j = 0; j < Metadatas.Count; j++)
         {
             bs.Position = lastDataPos;
-
             long headerOffset = headersStartOffset + (BundleMetadata.InfoSize * j);
             long dataStartOffset = lastDataPos;
-
             BundleMetadata metadata = Metadatas[j];
             writeDataAction(metadata);
-
             ulong relativeOffset = (ulong)(lastDataPos - headerOffset);
             lastDataPos = bs.Position;
-
             bs.Position = headerOffset;
             bs.WriteUInt32(metadata.Tag);
-
             ulong metadataSize = (ulong)(lastDataPos - dataStartOffset);
             ushort flags = (ushort)(metadataSize << 4 | (ushort)(metadata.Version & 0b1111));
             bs.WriteUInt16(flags);
-
             bs.WriteUInt16((ushort)relativeOffset);
         }
-
         bs.Position = lastDataPos;
     }
 

@@ -36,6 +36,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         public bool IsInitialized => _fileService != null;
 
         public ObservableCollection<FileGroupViewModel> FileGroups { get; } = new();
+        public event Action<Type> NavigationRequested;
 
         public void Initialize(nint windowHandle)
         {
@@ -67,38 +68,13 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         }
 
         [RelayCommand]
-        public void CreateZip() // Changed from Async to void for simple Navigation
+        public void CreateZip()
         {
-            // Assuming App.MainWindow has a Frame we can access via a helper or ShellPage
-            // For now, we assume the ShellPage handles navigation if we expose a request
-            // OR we can pass the Frame to the ViewModel.
-
-            // Typical WinUI 3 Navigation pattern from ShellPage:
-            var frame = (App.MainWindow.Content as FrameworkElement)?.FindName("ContentFrame") as Frame;
-            // Fallback: If your ShellPage structure differs, you might need an event.
-            // But based on your ShellPage.xaml.cs, you have a 'ContentFrame'.
-
-            // BETTER APPROACH: Add a navigation request event or use the ShellPage instance if static.
-            // Since I cannot change ShellPage instance logic easily here, 
-            // I will use a direct navigation hack or assume you wire it up in the View.
-
-            // Let's assume we can trigger navigation via the ShellPage which usually holds the MainViewModel.
-            // Actually, usually MainViewModel shouldn't know about Views.
-
-            // TEMPORARY FIX: We will trigger a property or event that ShellPage listens to?
-            // No, simplest way for this snippet:
-            // Since ShellPage has `ViewModel.OpenFilesCommand`, we can just tell ShellPage to Navigate.
-            // But the Command is in ViewModel. 
-
-            // I will add a static event to MainViewModel that ShellPage subscribes to.
             NavigationRequested?.Invoke(typeof(Views.CreateZipPage));
         }
 
-        // Add this to MainViewModel class
-        public event Action<Type> NavigationRequested;
-
         [RelayCommand]
-        public void CreateModelBin() // Changed to void/synchronous trigger for navigation
+        public void CreateModelBin()
         {
             NavigationRequested?.Invoke(typeof(Views.CreateModelBinPage));
         }
@@ -112,19 +88,22 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             {
                 foreach (var path in paths)
                 {
-                    var results = await _fileService.ProcessFileAsync(path);
-
                     var groupName = Path.GetFileName(path);
                     var group = new FileGroupViewModel(groupName);
 
-                    foreach (var item in results)
+                    // Add Group to UI IMMEDIATELY
+                    FileGroups.Add(group);
+
+                    // Stream files into the group one by one
+                    await foreach (var item in _fileService.ProcessFileAsync(path))
                     {
+                        StatusMessage = $"Parsing {item.FileName}...";
                         group.Files.Add(new FileViewModel(item.FileName, item.ParsedData));
                     }
 
-                    if (group.Files.Count > 0)
+                    if (group.Files.Count == 0)
                     {
-                        FileGroups.Add(group);
+                        FileGroups.Remove(group);
                     }
                 }
             }

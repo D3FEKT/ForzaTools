@@ -55,13 +55,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Include="C:\Users\xenon\Desktop\328e3904-e6d2-4cee-8c47-e651271f6be0.png">
-	    <Pack>True</Pack>
-	    <PackagePath>\</PackagePath>
-	  </None>
-	</ItemGroup>
-
-	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
 		<PackageReference Include="HelixToolkit" Version="3.1.2" />
 		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7175" />

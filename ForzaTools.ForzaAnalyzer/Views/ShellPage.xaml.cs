@@ -18,32 +18,21 @@ namespace ForzaTools.ForzaAnalyzer.Views
 
             ViewModel.FileGroups.CollectionChanged += FileGroups_CollectionChanged;
 
-            // NAVIGATION HANDLER
             ViewModel.NavigationRequested += (pageType) =>
             {
                 ContentFrame.Navigate(pageType);
-
-                // CRITICAL FIX: Deselect menu items so "Home" can be clicked again
                 NavView.SelectedItem = null;
                 NavView.IsBackEnabled = ContentFrame.CanGoBack;
             };
 
             this.Loaded += ShellPage_Loaded;
-
-            // Update Back Button state whenever we navigate
             ContentFrame.Navigated += (s, e) => NavView.IsBackEnabled = ContentFrame.CanGoBack;
-
-            // Default to Home
             NavView.SelectedItem = NavView.MenuItems[0];
         }
 
-        // --- BACK BUTTON LOGIC ---
         private void NavView_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
         {
-            if (ContentFrame.CanGoBack)
-            {
-                ContentFrame.GoBack();
-            }
+            if (ContentFrame.CanGoBack) ContentFrame.GoBack();
         }
 
         private void FileGroups_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
@@ -59,29 +48,47 @@ namespace ForzaTools.ForzaAnalyzer.Views
                         SelectsOnInvoked = false
                     };
 
+                    // Add existing files
                     foreach (var file in group.Files)
                     {
-                        var fileItem = new NavigationViewItem
-                        {
-                            Content = file.FileName,
-                            Icon = new SymbolIcon(Symbol.Document),
-                            Tag = file
-                        };
-                        groupItem.MenuItems.Add(fileItem);
+                        AddFileToMenu(groupItem, file);
                     }
+
+                    // FIX: Listen for future files added to this group (Streaming support)
+                    group.Files.CollectionChanged += (s, args) =>
+                    {
+                        if (args.NewItems != null)
+                        {
+                            foreach (FileViewModel newFile in args.NewItems)
+                            {
+                                AddFileToMenu(groupItem, newFile);
+                            }
+                        }
+                    };
+
                     NavView.MenuItems.Add(groupItem);
                 }
             }
 
             if (e.Action == NotifyCollectionChangedAction.Reset)
             {
-                // Assuming Home, Materials, ModelViewer, and CreateModelBin are the first 4 items (indices 0-3)
-                // Adjust this count if you have more static items in XAML
+                // Clear dynamic items (Keep Home, Materials, ModelView, CreateModelBin -> 4 items)
                 while (NavView.MenuItems.Count > 4)
                 {
                     NavView.MenuItems.RemoveAt(4);
                 }
             }
+        }
+
+        private void AddFileToMenu(NavigationViewItem groupItem, FileViewModel file)
+        {
+            var fileItem = new NavigationViewItem
+            {
+                Content = file.FileName,
+                Icon = new SymbolIcon(Symbol.Document),
+                Tag = file
+            };
+            groupItem.MenuItems.Add(fileItem);
         }
 
         private void ShellPage_Loaded(object sender, RoutedEventArgs e)
@@ -108,20 +115,11 @@ namespace ForzaTools.ForzaAnalyzer.Views
                     ContentFrame.Navigate(typeof(HomePage));
                     if (ContentFrame.Content is HomePage home) home.ViewModel = this.ViewModel;
                 }
-                else if (tag == "Materials")
-                {
-                    ContentFrame.Navigate(typeof(MaterialsPage));
-                }
-                else if (tag == "ModelView")
-                {
-                    ContentFrame.Navigate(typeof(ModelViewerPage), this.ViewModel);
-                }
-                // --- ADD THIS BLOCK ---
-                else if (tag == "CreateModelBinPage")
-                {
-                    ContentFrame.Navigate(typeof(CreateModelBinPage));
-                }
-                // ----------------------
+                else if (tag == "Materials") ContentFrame.Navigate(typeof(MaterialsPage));
+                else if (tag == "ModelView") ContentFrame.Navigate(typeof(ModelViewerPage), this.ViewModel);
+                else if (tag == "CreateModelBinPage") ContentFrame.Navigate(typeof(CreateModelBinPage));
+
+                // Specific File Handling
                 else if (item.Tag is FileViewModel fileVm)
                 {
                     ContentFrame.Navigate(typeof(FileDetailsPage), fileVm);

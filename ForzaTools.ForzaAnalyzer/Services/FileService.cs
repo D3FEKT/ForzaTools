@@ -2,10 +2,12 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
-using ForzaTools.Bundles;   // For the 'Bundle' class
-using ForzaTools.CarScene;  // For the 'CarbinFile' class
+using ForzaTools.Bundles;
+using ForzaTools.CarScene;
 
 namespace ForzaTools.ForzaAnalyzer.Services
 {
@@ -33,55 +35,54 @@ namespace ForzaTools.ForzaAnalyzer.Services
             return files.Select(f => f.Path).ToList();
         }
 
-        public async Task<List<(string FileName, object ParsedData)>> ProcessFileAsync(string filePath)
+        public async IAsyncEnumerable<(string FileName, object ParsedData)> ProcessFileAsync(string filePath, [EnumeratorCancellation] CancellationToken token = default)
         {
-            return await Task.Run(() =>
+            var extension = Path.GetExtension(filePath).ToLower();
+
+            if (extension == ".zip")
             {
-                var results = new List<(string, object)>();
-                var extension = Path.GetExtension(filePath).ToLower();
+                string tempPath = Path.Combine(Path.GetTempPath(), "ForzaAnalyzer", Guid.NewGuid().ToString());
+                Directory.CreateDirectory(tempPath);
 
-                if (extension == ".zip")
+                await Task.Run(() =>
                 {
-                    string tempPath = Path.Combine(Path.GetTempPath(), "ForzaAnalyzer", Guid.NewGuid().ToString());
-                    Directory.CreateDirectory(tempPath);
-
                     try
                     {
                         using (var zip = new CustomZipFile(filePath))
                         {
                             zip.ExtractToDirectory(tempPath);
                         }
-
-                        var extractedFiles = Directory.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
-                            .Where(f => f.EndsWith(".modelbin", StringComparison.OrdinalIgnoreCase) ||
-                                        f.EndsWith(".carbin", StringComparison.OrdinalIgnoreCase));
-
-                        foreach (var file in extractedFiles)
-                        {
-                            var result = ParseSingleFile(file);
-                            if (result != null)
-                            {
-                                results.Add((Path.GetFileName(file), result));
-                            }
-                        }
                     }
                     catch (Exception ex)
                     {
-                        // Log error or ignore specific zip failures
                         System.Diagnostics.Debug.WriteLine($"Zip error: {ex.Message}");
                     }
-                }
-                else
+                });
+
+                var extractedFiles = Directory.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
+                    .Where(f => f.EndsWith(".modelbin", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".carbin", StringComparison.OrdinalIgnoreCase));
+
+                foreach (var file in extractedFiles)
                 {
-                    var result = ParseSingleFile(filePath);
+                    token.ThrowIfCancellationRequested();
+                    var result = await Task.Run(() => ParseSingleFile(file));
                     if (result != null)
                     {
-                        results.Add((Path.GetFileName(filePath), result));
+                        yield return (Path.GetFileName(file), result);
                     }
+                    // Optional: Force GC after each heavy file to prevent buildup
+                    // GC.Collect(); 
                 }
-
-                return results;
-            });
+            }
+            else
+            {
+                var result = await Task.Run(() => ParseSingleFile(filePath));
+                if (result != null)
+                {
+                    yield return (Path.GetFileName(filePath), result);
+                }
+            }
         }
 
         private object ParseSingleFile(string path)
@@ -98,11 +99,8 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 }
                 else if (path.EndsWith(".carbin", StringComparison.OrdinalIgnoreCase))
                 {
-                    // CORRECTED: Use CarbinFile class from ForzaTools.CarScene namespace
                     var carbin = new CarbinFile();
                     carbin.Load(stream);
-
-                    // Return the Scene object as it contains the actual data
                     return carbin.Scene;
                 }
             }
