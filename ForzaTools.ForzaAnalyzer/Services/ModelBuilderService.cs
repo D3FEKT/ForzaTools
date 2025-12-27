@@ -19,20 +19,15 @@ namespace ForzaTools.ForzaAnalyzer.Services
             _geometryService = new GeometryProcessingService();
         }
 
-        /// <summary>
-        /// Parses and processes the OBJ geometry.
-        /// </summary>
+        // --- 1. Process Geometry ---
         public ProcessedGeometry ProcessGeometry(GeometryInput input)
         {
             return _geometryService.ProcessGeometry(input);
         }
 
-        /// <summary>
-        /// Creates the Bundle structure in memory without saving to disk.
-        /// </summary>
+        // --- 2. Create Bundle In Memory ---
         public Bundle CreateBundleInMemory(ProcessedGeometry processed, string materialName)
         {
-            // Initialize Bundle
             var bundle = new Bundle
             {
                 VersionMajor = 1,
@@ -53,9 +48,6 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
             // --- 1. Morph ---
             bundle.Blobs.Add(new MorphBlob { Tag = Bundle.TAG_BLOB_Morph, VersionMajor = 0, VersionMinor = 0 });
-
-            // --- 8. Material (Added BEFORE Meshes as requested) ---
-            UpdateMaterialInBundle(bundle, materialName);
 
             // --- 2-7. Mesh Blobs ---
             for (int i = 0; i < 6; i++)
@@ -79,7 +71,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
                     NameSuffix = i.ToString()
                 };
 
-                // Set default LOD flags
+                // Set LOD flags
                 switch (i)
                 {
                     case 0: meshBlob.LOD_LOD0 = true; break;
@@ -90,6 +82,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
                     case 5: meshBlob.LOD_LOD5 = true; break;
                 }
 
+                // Buffer Usage
                 meshBlob.VertexBuffers.Add(new MeshBlob.VertexBufferUsage { Index = idLink_VB_Pos, InputSlot = 0, Stride = 8, Offset = 0 });
                 meshBlob.VertexBuffers.Add(new MeshBlob.VertexBufferUsage { Index = idLink_VB_Norm, InputSlot = 1, Stride = 40, Offset = 0 });
 
@@ -99,6 +92,19 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 bundle.Blobs.Add(meshBlob);
             }
 
+            // --- 8. Material ---
+            byte[] matData = MaterialLibrary.GetMaterialData(materialName);
+            var materialBlob = new MaterialBlob
+            {
+                Tag = Bundle.TAG_BLOB_MaterialInstance,
+                VersionMajor = 1,
+                VersionMinor = 0,
+                CustomBlobData = matData
+            };
+            materialBlob.Metadatas.Add(new NameMetadata { Tag = BundleMetadata.TAG_METADATA_Name, Name = materialName });
+            materialBlob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = 0 });
+            bundle.Blobs.Add(materialBlob);
+
             // --- 9. Index Buffer ---
             byte[] flattenedIndices = processed.IndexData.SelectMany(b => b).ToArray();
             var ibBlob = new IndexBufferBlob
@@ -106,21 +112,23 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 Tag = Bundle.TAG_BLOB_IndexBuffer,
                 VersionMajor = 1,
                 VersionMinor = 0,
-                Data = flattenedIndices,
-                Header = new BufferHeader
-                {
-                    Length = processed.IndexData.Length,
-                    Stride = 4,
-                    NumElements = 1,
-                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
-                    Data = processed.IndexData
-                }
+                Data = flattenedIndices
+            };
+            ibBlob.Header = new BufferHeader
+            {
+                Length = processed.IndexData.Length,
+                Stride = 4,
+                NumElements = 1,
+                Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
+                Data = processed.IndexData
             };
             ibBlob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)idLink_IB) });
             bundle.Blobs.Add(ibBlob);
 
-            // --- 10 & 11. Layouts ---
+            // --- 10. VLay (Full) ---
             bundle.Blobs.Add(CreateLayoutFull(idLink_LayoutFull));
+
+            // --- 11. VLay (Pos Only) ---
             bundle.Blobs.Add(CreateLayoutPosOnly(idLink_LayoutPos));
 
             // --- 12. VB Position ---
@@ -130,35 +138,35 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 Tag = Bundle.TAG_BLOB_VertexBuffer,
                 VersionMajor = 1,
                 VersionMinor = 0,
-                Data = flattenedPos,
-                Header = new BufferHeader
-                {
-                    Length = processed.PositionData.Length,
-                    Stride = 8,
-                    NumElements = 1,
-                    Format = DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_SNORM,
-                    Data = processed.PositionData
-                }
+                Data = flattenedPos
+            };
+            vbPos.Header = new BufferHeader
+            {
+                Length = processed.PositionData.Length,
+                Stride = 8,
+                NumElements = 1,
+                Format = DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_SNORM,
+                Data = processed.PositionData
             };
             vbPos.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)idLink_VB_Pos) });
             bundle.Blobs.Add(vbPos);
 
-            // --- 13. VB Normal ---
+            // --- 13. VB Norm/UV ---
             byte[] flattenedNorm = processed.NormalUVData.SelectMany(b => b).ToArray();
             var vbNorm = new VertexBufferBlob
             {
                 Tag = Bundle.TAG_BLOB_VertexBuffer,
                 VersionMajor = 1,
                 VersionMinor = 0,
-                Data = flattenedNorm,
-                Header = new BufferHeader
-                {
-                    Length = processed.NormalUVData.Length,
-                    Stride = 40,
-                    NumElements = 1,
-                    Format = (DXGI_FORMAT)37,
-                    Data = processed.NormalUVData
-                }
+                Data = flattenedNorm
+            };
+            vbNorm.Header = new BufferHeader
+            {
+                Length = processed.NormalUVData.Length,
+                Stride = 40,
+                NumElements = 1,
+                Format = (DXGI_FORMAT)37,
+                Data = processed.NormalUVData
             };
             vbNorm.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)idLink_VB_Norm) });
             bundle.Blobs.Add(vbNorm);
@@ -183,42 +191,28 @@ namespace ForzaTools.ForzaAnalyzer.Services
             return bundle;
         }
 
+        // --- 3. Update Material In Bundle ---
         public void UpdateMaterialInBundle(Bundle bundle, string materialName)
         {
-            // Remove existing material blob if present
-            var existing = bundle.Blobs.FirstOrDefault(b => b is MaterialBlob);
-            if (existing != null) bundle.Blobs.Remove(existing);
+            var matBlob = bundle.Blobs.FirstOrDefault(b => b.Tag == Bundle.TAG_BLOB_MaterialInstance) as MaterialBlob;
+            if (matBlob == null) return;
 
-            // Add new
-            byte[] matData = MaterialLibrary.GetMaterialData(materialName);
-            var materialBlob = new MaterialBlob
-            {
-                Tag = Bundle.TAG_BLOB_MaterialInstance,
-                VersionMajor = 1,
-                VersionMinor = 0,
-                CustomBlobData = matData
-            };
-            materialBlob.Metadatas.Add(new NameMetadata { Tag = BundleMetadata.TAG_METADATA_Name, Name = materialName });
-            materialBlob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = 0 });
+            // Update Blob Data
+            matBlob.CustomBlobData = MaterialLibrary.GetMaterialData(materialName);
 
-            // Insert BEFORE Meshes to satisfy order requirement
-            // Try to find the first MeshBlob to insert before
-            int meshIndex = bundle.Blobs.FindIndex(b => b is MeshBlob);
-            if (meshIndex != -1)
+            // Update Name Metadata
+            var nameMeta = matBlob.Metadatas.FirstOrDefault(m => m.Tag == BundleMetadata.TAG_METADATA_Name) as NameMetadata;
+            if (nameMeta != null)
             {
-                bundle.Blobs.Insert(meshIndex, materialBlob);
+                nameMeta.Name = materialName;
             }
             else
             {
-                // Fallback: If no meshes yet, put before IndexBuffer or just Add
-                int ibIndex = bundle.Blobs.FindIndex(b => b is IndexBufferBlob);
-                if (ibIndex != -1)
-                    bundle.Blobs.Insert(ibIndex, materialBlob);
-                else
-                    bundle.Blobs.Add(materialBlob);
+                matBlob.Metadatas.Add(new NameMetadata { Tag = BundleMetadata.TAG_METADATA_Name, Name = materialName });
             }
         }
 
+        // --- 4. Save Bundle ---
         public void SaveBundle(Bundle bundle, string outputPath)
         {
             using (var fs = new FileStream(outputPath, FileMode.Create))
@@ -227,6 +221,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
             }
         }
 
+        // Wrapper for backward compatibility (re-uses new methods)
         public void BuildCompatibleModelBin(string outputPath, GeometryInput input, string materialName)
         {
             var processed = ProcessGeometry(input);
@@ -237,16 +232,38 @@ namespace ForzaTools.ForzaAnalyzer.Services
         private VertexLayoutBlob CreateLayoutFull(int id)
         {
             var blob = new VertexLayoutBlob { Tag = Bundle.TAG_BLOB_VertexLayout, VersionMajor = 1, VersionMinor = 1 };
+
+            // 1. Semantics
             blob.SemanticNames.AddRange(new[] { "POSITION", "NORMAL", "TEXCOORD", "TANGENT", "COLOR" });
+
+            // 2. Elements (Updated to match hex dump requirement)
             blob.Elements.Add(CreateElement(0, 0, 0, 0, 13)); // Pos
             blob.Elements.Add(CreateElement(1, 0, 1, 0, 37)); // Normal
-            blob.Elements.Add(CreateElement(2, 0, 1, 0, 35)); // TexCoord
-            for (int i = 0; i < 5; i++) blob.Elements.Add(CreateElement(3, (short)i, 1, 0, 35)); // Tangents
-            for (int i = 0; i < 3; i++) blob.Elements.Add(CreateElement(4, (short)i, 1, 0, 24)); // Colors
+
+            // Note: Updated to match "Hex Dump" requirement from previous turn:
+            // 5 TexCoords, 3 Tangents, 1 Color
+
+            // 5 TexCoords (Slot 1, Fmt 35)
+            for (int i = 0; i < 5; i++)
+                blob.Elements.Add(CreateElement(2, (short)i, 1, 0, 35));
+
+            // 3 Tangents (Slot 1, Fmt 24 - DXGI_FORMAT_R10G10B10A2_UNORM)
+            for (int i = 0; i < 3; i++)
+                blob.Elements.Add(CreateElement(3, (short)i, 1, 0, 24));
+
+            // 1 Color (Slot 1, Fmt 28 - DXGI_FORMAT_R8G8B8A8_UNORM)
+            blob.Elements.Add(CreateElement(4, 0, 1, 0, 28));
+
+            // 3. Formats
             int[] formats = { 49, 52, 46, 46, 46, 46, 46, 48, 48, 48, 22 };
             foreach (var f in formats) blob.PackedFormats.Add((DXGI_FORMAT)f);
+
+            // 4. Flags
             blob.Flags = 0x000004FF;
+
+            // 5. Metadata ID
             blob.Metadatas.Add(new IdentifierMetadata { Tag = BundleMetadata.TAG_METADATA_Identifier, Id = unchecked((uint)id) });
+
             return blob;
         }
 
@@ -261,7 +278,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
             return blob;
         }
 
-        private D3D12_INPUT_LAYOUT_DESC CreateElement(short nameIdx, short semIdx, short slot, short slotClass, int format)
+        private D3D12_INPUT_LAYOUT_DESC CreateElement(short nameIdx, short semIdx, short slot, short slotClass, int format, int offset = -1, int step = 0)
         {
             return new D3D12_INPUT_LAYOUT_DESC
             {
@@ -270,7 +287,8 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 InputSlot = slot,
                 InputSlotClass = slotClass,
                 Format = (DXGI_FORMAT)format,
-                AlignedByteOffset = -1
+                AlignedByteOffset = offset,
+                InstanceDataStepRate = step
             };
         }
     }

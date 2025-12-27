@@ -22,7 +22,7 @@ public class MeshBlob : BundleBlob
 
     // Helpers
     public bool LOD_LODS { get => (LODFlags & 1) != 0; set => LODFlags = (ushort)(value ? LODFlags | 1 : LODFlags & ~1); }
-    public bool LOD_LOD0 { get => (LODFlags & 2) != 0; set => LODFlags = (ushort)(value ? LODFlags | 2 : LODFlags & ~2); }
+    public bool LOD_LOD0 { get => (LODFlags & 3) != 0; set => LODFlags = (ushort)(value ? LODFlags | 3 : LODFlags & ~3); }
     public bool LOD_LOD1 { get => (LODFlags & 4) != 0; set => LODFlags = (ushort)(value ? LODFlags | 4 : LODFlags & ~4); }
     public bool LOD_LOD2 { get => (LODFlags & 8) != 0; set => LODFlags = (ushort)(value ? LODFlags | 8 : LODFlags & ~8); }
     public bool LOD_LOD3 { get => (LODFlags & 16) != 0; set => LODFlags = (ushort)(value ? LODFlags | 16 : LODFlags & ~16); }

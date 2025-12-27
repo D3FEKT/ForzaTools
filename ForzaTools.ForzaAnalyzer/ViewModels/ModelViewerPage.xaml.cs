@@ -1,7 +1,7 @@
 using ForzaTools.ForzaAnalyzer.Services;
 using ForzaTools.ForzaAnalyzer.ViewModels;
-using HelixToolkit.WinUI;
 using HelixToolkit.SharpDX.Core;
+using HelixToolkit.WinUI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -9,11 +9,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Windows.UI;
 using SDX = SharpDX;
-using System.Numerics;
 
 namespace ForzaTools.ForzaAnalyzer.Views
 {
@@ -256,20 +257,36 @@ namespace ForzaTools.ForzaAnalyzer.Views
             };
         }
 
+        private void PopulateTransformFields(ForzaMeshViewModel vm)
+        {
+            if (vm == null || vm.Data?.SourceMesh == null) return;
+
+            _isUpdatingUi = true;
+            var mesh = vm.Data.SourceMesh;
+
+            ScaleX.Text = mesh.PositionScale.X.ToString("0.0000");
+            ScaleY.Text = mesh.PositionScale.Y.ToString("0.0000");
+            ScaleZ.Text = mesh.PositionScale.Z.ToString("0.0000");
+
+            TransX.Text = mesh.PositionTranslate.X.ToString("0.0000");
+            TransY.Text = mesh.PositionTranslate.Y.ToString("0.0000");
+            TransZ.Text = mesh.PositionTranslate.Z.ToString("0.0000");
+            _isUpdatingUi = false;
+        }
+
+        private void MeshList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.FirstOrDefault() is ForzaMeshViewModel selectedVm)
+            {
+                PopulateTransformFields(selectedVm);
+            }
+        }
+
         private void CheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            if (sender is CheckBox cb && cb.DataContext is ForzaMeshViewModel vm && vm.IsVisible)
+            if (sender is CheckBox cb && cb.DataContext is ForzaMeshViewModel vm)
             {
-                _isUpdatingUi = true;
-                var mesh = vm.Data.SourceMesh;
-                ScaleX.Text = mesh.PositionScale.X.ToString("0.0000");
-                ScaleY.Text = mesh.PositionScale.Y.ToString("0.0000");
-                ScaleZ.Text = mesh.PositionScale.Z.ToString("0.0000");
-
-                TransX.Text = mesh.PositionTranslate.X.ToString("0.0000");
-                TransY.Text = mesh.PositionTranslate.Y.ToString("0.0000");
-                TransZ.Text = mesh.PositionTranslate.Z.ToString("0.0000");
-                _isUpdatingUi = false;
+                PopulateTransformFields(vm);
             }
         }
 

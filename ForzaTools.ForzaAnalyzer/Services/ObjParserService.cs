@@ -43,19 +43,22 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 {
                     case "v": // Position
                         if (tokens.Length >= 4)
-                            rawPositions.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), ParseFloat(tokens[3])));
+                            // FIX 1: Negate Z (-ParseFloat) to fix "Behind" reflections
+                            rawPositions.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), -ParseFloat(tokens[3])));
                         break;
 
                     case "vn": // Normal
                         if (tokens.Length >= 4)
-                            rawNormals.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), ParseFloat(tokens[3])));
+                            // FIX 2: Negate Z (-ParseFloat) for normals too
+                            rawNormals.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), -ParseFloat(tokens[3])));
                         break;
 
                     case "vt": // UV
                         if (tokens.Length >= 3)
                         {
-                            // Invert V coordinate as per main.py
-                            rawUVs.Add(new Vector2(ParseFloat(tokens[1]), 1.0f - ParseFloat(tokens[2])));
+                            // FIX 3: REMOVE "1.0f - ". Pass raw V.
+                            // GeometryProcessingService already flips V. Doing it here too was un-flipping it.
+                            rawUVs.Add(new Vector2(ParseFloat(tokens[1]), ParseFloat(tokens[2])));
                         }
                         break;
 

@@ -19,21 +19,9 @@ public class VertexBufferBlob : BundleBlob
 
     public override void CreateModelBinBlobData(BinaryStream bs)
     {
-        // Calculate count
-        int count = 0;
-        if (Header.Stride > 0)
-            count = Data.Length / (int)Header.Stride;
-
-        bs.WriteInt32(count);
-        bs.WriteInt32(Data.Length);
-        bs.WriteUInt16((ushort)Header.Stride);
-
-        // v1.0 Header Fields
-        bs.WriteByte(1); // NumElements
-        bs.WriteByte(0); // Padding
-        bs.WriteInt32((int)Header.Format);
-
-        // Write the raw vertex data
-        bs.Write(Data);
+        // FIX: Delegate to Header.CreateModelBin.
+        // This ensures we use the parsed/edited data (Header.Data) instead of the raw _data.
+        // This prevents header duplication and ensures "Live Edits" are actually saved.
+        Header.CreateModelBin(bs, VersionMajor, VersionMinor);
     }
 }

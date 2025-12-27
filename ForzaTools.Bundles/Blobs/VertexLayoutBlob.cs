@@ -1,13 +1,13 @@
 ﻿using ForzaTools.Bundles.Metadata;
 using ForzaTools.Shared;
 using Syroot.BinaryData;
-using System;
 using System.Collections.Generic;
 
 namespace ForzaTools.Bundles.Blobs;
 
 public class VertexLayoutBlob : BundleBlob
 {
+    // FIX 1: Initialize lists to prevent "Object reference not set" crashes
     public List<string> SemanticNames { get; set; } = new();
     public List<D3D12_INPUT_LAYOUT_DESC> Elements { get; set; } = new();
     public List<DXGI_FORMAT> PackedFormats { get; set; } = new();
@@ -42,30 +42,12 @@ public class VertexLayoutBlob : BundleBlob
 
     public override void SerializeBlobData(BinaryStream bs)
     {
-        bs.WriteUInt16((ushort)SemanticNames.Count);
-        foreach (string semanticName in SemanticNames)
-        {
-            bs.WriteString(semanticName, StringCoding.Int32CharCount);
-        }
-
-        bs.WriteUInt16((ushort)Elements.Count);
-        foreach (D3D12_INPUT_LAYOUT_DESC element in Elements)
-        {
-            element.Serialize(bs);
-        }
-
-        if (IsAtLeastVersion(1, 0))
-        {
-            for (int i = 0; i < PackedFormats.Count; i++)
-                bs.WriteInt32((int)PackedFormats[i]);
-        }
-
-        if (IsAtLeastVersion(1, 1))
-            bs.WriteUInt32(Flags);
+        CreateModelBinBlobData(bs);
     }
 
     public override void CreateModelBinBlobData(BinaryStream bs)
     {
+        // FIX 2: Restored Semantic Name writing logic
         // 1. Semantic Names
         bs.WriteUInt16((ushort)SemanticNames.Count);
         foreach (string semanticName in SemanticNames)
@@ -80,7 +62,9 @@ public class VertexLayoutBlob : BundleBlob
             element.Serialize(bs);
         }
 
-        // 3. Packed Formats (Write all formats corresponding to elements)
+        // 3. Packed Formats
+        // Note: We do not write a count here. The reader uses 'elementCount' (from step 2) 
+        // to determine how many formats to read.
         foreach (DXGI_FORMAT format in PackedFormats)
         {
             bs.WriteInt32((int)format);
@@ -89,9 +73,6 @@ public class VertexLayoutBlob : BundleBlob
         // 4. Flags
         bs.WriteUInt32(Flags);
     }
-
-    // REMOVED: CreateModelBinMetadatas override. 
-    // This allows ModelBuilderService to manually set the IdentifierMetadata ID without it being overwritten.
 }
 
 public class D3D12_INPUT_LAYOUT_DESC
@@ -99,7 +80,7 @@ public class D3D12_INPUT_LAYOUT_DESC
     public short SemanticNameIndex;
     public short SemanticIndex;
     public short InputSlot;
-    public short InputSlotClass; // 0 = PerVertex, 1 = PerInstance
+    public short InputSlotClass;
     public DXGI_FORMAT Format;
     public int AlignedByteOffset;
     public int InstanceDataStepRate;
