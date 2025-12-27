@@ -276,30 +276,4 @@ public class MeshBlob : BundleBlob
         bs.WriteVector4(PositionScale);
         bs.WriteVector4(PositionTranslate);
     }
-
-    public override void CreateModelBinMetadatas(BinaryStream bs)
-    {
-        this.Metadatas.Clear();
-
-        this.Metadatas.Add(new NameMetadata
-        {
-            Tag = BundleMetadata.TAG_METADATA_Name,
-            Name = $"custommod_LOD{NameSuffix}"
-        });
-
-        this.Metadatas.Add(new IdentifierMetadata
-        {
-            Tag = BundleMetadata.TAG_METADATA_Identifier,
-            Id = this.Id
-        });
-
-        this.Metadatas.Add(new BoundaryBoxMetadata
-        {
-            Tag = BundleMetadata.TAG_METADATA_BBox,
-            Min = new Vector3(-45.98f, -0.83f, 2.05f), // These could be dynamic too if passed
-            Max = new Vector3(45.98f, 0.77f, 2.20f)
-        });
-
-        base.CreateModelBinMetadatas(bs);
-    }
 }

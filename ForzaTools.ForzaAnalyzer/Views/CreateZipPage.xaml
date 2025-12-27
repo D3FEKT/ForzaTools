@@ -15,7 +15,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Spacing="16">
-            <TextBlock Text="Create New Archive" Style="{StaticResource TitleTextBlockStyle}"/>
+            <TextBlock Text="Create Forza ZIP" Style="{StaticResource TitleTextBlockStyle}"/>
 
             <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>

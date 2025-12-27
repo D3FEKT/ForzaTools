@@ -33,7 +33,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
         public ObservableCollection<ZipItem> Items { get; } = new();
 
-        public List<string> Formats { get; } = new() { "Standard Zip (Deflate)", "Forza Zip (XMemCompress)" };
+        public List<string> Formats { get; } = new() { "Standard Zip (Deflate)", "Forza Zip (Store)" };
 
         [RelayCommand]
         public async Task AddFilesAsync()

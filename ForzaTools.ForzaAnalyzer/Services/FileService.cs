@@ -35,7 +35,12 @@ namespace ForzaTools.ForzaAnalyzer.Services
             return files.Select(f => f.Path).ToList();
         }
 
-        public async IAsyncEnumerable<(string FileName, object ParsedData)> ProcessFileAsync(string filePath, [EnumeratorCancellation] CancellationToken token = default)
+        /// <summary>
+        /// Iterates through the provided path. If it's a zip, extracts it and yields the paths of contained files.
+        /// If it's a single file, yields the path itself.
+        /// Does NOT parse the files into memory objects.
+        /// </summary>
+        public async IAsyncEnumerable<string> GetFilePathsAsync(string filePath, [EnumeratorCancellation] CancellationToken token = default)
         {
             var extension = Path.GetExtension(filePath).ToLower();
 
@@ -65,50 +70,46 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
                 foreach (var file in extractedFiles)
                 {
-                    token.ThrowIfCancellationRequested();
-                    var result = await Task.Run(() => ParseSingleFile(file));
-                    if (result != null)
-                    {
-                        yield return (Path.GetFileName(file), result);
-                    }
-                    // Optional: Force GC after each heavy file to prevent buildup
-                    // GC.Collect(); 
+                    yield return file;
                 }
             }
             else
             {
-                var result = await Task.Run(() => ParseSingleFile(filePath));
-                if (result != null)
-                {
-                    yield return (Path.GetFileName(filePath), result);
-                }
+                yield return filePath;
             }
         }
 
-        private object ParseSingleFile(string path)
+        /// <summary>
+        /// Parses a single file from disk into a Bundle or Scene object.
+        /// </summary>
+        public async Task<object> LoadFileAsync(string path)
         {
-            try
+            // Fix: Explicitly use Task.Run<object> so the compiler knows the lambda returns an object
+            return await Task.Run<object>(() =>
             {
-                using var stream = File.OpenRead(path);
+                try
+                {
+                    using var stream = File.OpenRead(path);
 
-                if (path.EndsWith(".modelbin", StringComparison.OrdinalIgnoreCase))
-                {
-                    var bundle = new Bundle();
-                    bundle.Load(stream);
-                    return bundle;
+                    if (path.EndsWith(".modelbin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var bundle = new Bundle();
+                        bundle.Load(stream);
+                        return bundle;
+                    }
+                    else if (path.EndsWith(".carbin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var carbin = new CarbinFile();
+                        carbin.Load(stream);
+                        return carbin.Scene;
+                    }
                 }
-                else if (path.EndsWith(".carbin", StringComparison.OrdinalIgnoreCase))
+                catch (Exception ex)
                 {
-                    var carbin = new CarbinFile();
-                    carbin.Load(stream);
-                    return carbin.Scene;
+                    System.Diagnostics.Debug.WriteLine($"Failed to parse {path}: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to parse {path}: {ex.Message}");
-            }
-            return null;
+                return null;
+            });
         }
     }
 }

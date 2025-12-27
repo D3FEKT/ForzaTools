@@ -16,9 +16,6 @@
                     Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Center" Width="200" Height="40"/>
 
             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-                <Button Content="Create Zip" Command="{x:Bind ViewModel.CreateZipCommand}" 
-                        Width="140" Height="35"/>
-
                 <Button Content="Create ModelBin" Command="{x:Bind ViewModel.CreateModelBinCommand}" 
                         Width="140" Height="35"/>
             </StackPanel>

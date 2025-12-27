@@ -29,8 +29,30 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         [ObservableProperty]
         private string _statusMessage;
 
-        [ObservableProperty]
+        // Manual implementation of SelectedFile to handle Unload logic
         private FileViewModel _selectedFile;
+        public FileViewModel SelectedFile
+        {
+            get => _selectedFile;
+            set
+            {
+                var oldValue = _selectedFile;
+                if (SetProperty(ref _selectedFile, value))
+                {
+                    // 1. Unload the previous file to free memory
+                    oldValue?.Unload();
+
+                    // 2. Load the new file
+                    if (_selectedFile != null)
+                    {
+                        _ = _selectedFile.EnsureLoadedAsync();
+                    }
+
+                    // Notify that Home selection state changed
+                    OnPropertyChanged(nameof(IsHomeSelected));
+                }
+            }
+        }
 
         public bool IsHomeSelected => SelectedFile == null;
         public bool IsInitialized => _fileService != null;
@@ -82,7 +104,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         public async Task ProcessPathsAsync(IEnumerable<string> paths)
         {
             IsBusy = true;
-            StatusMessage = "Parsing files...";
+            StatusMessage = "Listing files...";
 
             try
             {
@@ -94,11 +116,15 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                     // Add Group to UI IMMEDIATELY
                     FileGroups.Add(group);
 
-                    // Stream files into the group one by one
-                    await foreach (var item in _fileService.ProcessFileAsync(path))
+                    // Stream file paths into the group one by one
+                    // Now using GetFilePathsAsync which only extracts/lists, doesn't parse data
+                    await foreach (var filePath in _fileService.GetFilePathsAsync(path))
                     {
-                        StatusMessage = $"Parsing {item.FileName}...";
-                        group.Files.Add(new FileViewModel(item.FileName, item.ParsedData));
+                        var fileName = Path.GetFileName(filePath);
+                        StatusMessage = $"Found {fileName}...";
+
+                        // Pass the filePath and service, but don't load yet
+                        group.Files.Add(new FileViewModel(fileName, filePath, _fileService));
                     }
 
                     if (group.Files.Count == 0)
@@ -109,12 +135,12 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             }
             catch (Exception ex)
             {
-                await ShowErrorDialog($"Error parsing file: {ex.Message}");
+                await ShowErrorDialog($"Error listing files: {ex.Message}");
             }
             finally
             {
                 IsBusy = false;
-                StatusMessage = string.Empty;
+                StatusMessage = "Ready";
             }
         }
 

@@ -2,7 +2,7 @@
 using Microsoft.UI.Xaml.Data;
 using System;
 
-namespace ForzaTools.ForzaAnalyzer
+namespace ForzaTools.ForzaAnalyzer.Views
 {
     public class BoolToVisibilityConverter : IValueConverter
     {
@@ -19,5 +19,20 @@ namespace ForzaTools.ForzaAnalyzer
         {
             throw new NotImplementedException();
         }
+    }
+
+    public class NullToBoolConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, string language)
+        {
+            // Returns true if the value is NOT null, enabling the button.
+            return value != null;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, string language)
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

@@ -48,13 +48,11 @@ namespace ForzaTools.ForzaAnalyzer.Views
                         SelectsOnInvoked = false
                     };
 
-                    // Add existing files
                     foreach (var file in group.Files)
                     {
                         AddFileToMenu(groupItem, file);
                     }
 
-                    // FIX: Listen for future files added to this group (Streaming support)
                     group.Files.CollectionChanged += (s, args) =>
                     {
                         if (args.NewItems != null)
@@ -72,10 +70,10 @@ namespace ForzaTools.ForzaAnalyzer.Views
 
             if (e.Action == NotifyCollectionChangedAction.Reset)
             {
-                // Clear dynamic items (Keep Home, Materials, ModelView, CreateModelBin -> 4 items)
-                while (NavView.MenuItems.Count > 4)
+                // Update to keep 5 static items (Home, Materials, ModelView, CreateModelBin, CreateZip)
+                while (NavView.MenuItems.Count > 5)
                 {
-                    NavView.MenuItems.RemoveAt(4);
+                    NavView.MenuItems.RemoveAt(5);
                 }
             }
         }
@@ -119,7 +117,9 @@ namespace ForzaTools.ForzaAnalyzer.Views
                 else if (tag == "ModelView") ContentFrame.Navigate(typeof(ModelViewerPage), this.ViewModel);
                 else if (tag == "CreateModelBinPage") ContentFrame.Navigate(typeof(CreateModelBinPage));
 
-                // Specific File Handling
+                // ADDED NAVIGATION LOGIC
+                else if (tag == "CreateZip") ContentFrame.Navigate(typeof(CreateZipPage));
+
                 else if (item.Tag is FileViewModel fileVm)
                 {
                     ContentFrame.Navigate(typeof(FileDetailsPage), fileVm);

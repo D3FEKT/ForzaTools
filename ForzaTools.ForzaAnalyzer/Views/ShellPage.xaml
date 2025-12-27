@@ -19,10 +19,14 @@
             <NavigationViewItem Icon="View" Content="Model Viewer" Tag="ModelView" />
             <NavigationViewItem Icon="Add" Content="Modelbin Creator" Tag="CreateModelBinPage" />
 
+            <NavigationViewItem Tag="CreateZip" Content="Zip Creator">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xF012;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+
             <NavigationViewItemSeparator />
         </NavigationView.MenuItems>
-
-
 
         <Frame x:Name="ContentFrame"/>
     </NavigationView>

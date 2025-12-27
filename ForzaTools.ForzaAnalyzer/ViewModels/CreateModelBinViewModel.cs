@@ -7,6 +7,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using ForzaTools.ForzaAnalyzer.Services;
+using ForzaTools.Bundles;
+using ForzaTools.Bundles.Blobs;
 using Microsoft.UI.Xaml;
 
 namespace ForzaTools.ForzaAnalyzer.ViewModels
@@ -16,8 +18,14 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         private readonly ModelBuilderService _builderService = new ModelBuilderService();
         private readonly ObjParserService _parserService = new ObjParserService();
 
+        // The in-memory bundle we are editing
+        private Bundle _activeBundle;
+
+        // Changed type from GeometryInput to ProcessedGeometry
+        private ProcessedGeometry _cachedGeometry;
+
         [ObservableProperty]
-        private string _statusMessage = "Ready to convert.";
+        private string _statusMessage = "Select an OBJ file to begin.";
 
         [ObservableProperty]
         private string _inputFilePath;
@@ -27,6 +35,18 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         private bool _isBusy;
 
         public bool IsNotBusy => !IsBusy;
+
+        [ObservableProperty]
+        private bool _isFileSelected;
+
+        // --- Live Edit Properties ---
+        [ObservableProperty] private bool _isOpaque = true;
+        [ObservableProperty] private bool _isDecal;
+        [ObservableProperty] private bool _isTransparent;
+        [ObservableProperty] private bool _isShadow = true;
+        [ObservableProperty] private bool _isNotShadow;
+        [ObservableProperty] private bool _isAlphaToCoverage;
+        [ObservableProperty] private bool _isMorphDamage = true;
 
         // --- Material Selection ---
         public ObservableCollection<string> Materials { get; } = new ObservableCollection<string>();
@@ -39,24 +59,50 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             LoadMaterials();
         }
 
+        partial void OnSelectedMaterialChanged(string value)
+        {
+            if (_activeBundle != null && !string.IsNullOrEmpty(value))
+            {
+                _builderService.UpdateMaterialInBundle(_activeBundle, value);
+                StatusMessage = $"Updated material to '{value}'.";
+            }
+        }
+
+        // Property changed handlers for Live Edit flags
+        partial void OnIsOpaqueChanged(bool value) => UpdateMeshFlags();
+        partial void OnIsDecalChanged(bool value) => UpdateMeshFlags();
+        partial void OnIsTransparentChanged(bool value) => UpdateMeshFlags();
+        partial void OnIsShadowChanged(bool value) => UpdateMeshFlags();
+        partial void OnIsNotShadowChanged(bool value) => UpdateMeshFlags();
+        partial void OnIsAlphaToCoverageChanged(bool value) => UpdateMeshFlags();
+        partial void OnIsMorphDamageChanged(bool value) => UpdateMeshFlags();
+
+        private void UpdateMeshFlags()
+        {
+            if (_activeBundle == null) return;
+
+            foreach (var mesh in _activeBundle.Blobs.OfType<MeshBlob>())
+            {
+                mesh.IsOpaque = IsOpaque;
+                mesh.IsDecal = IsDecal;
+                mesh.IsTransparent = IsTransparent;
+                mesh.IsShadow = IsShadow;
+                mesh.IsNotShadow = IsNotShadow;
+                mesh.IsAlphaToCoverage = IsAlphaToCoverage;
+                mesh.IsMorphDamage = IsMorphDamage;
+            }
+            StatusMessage = "Updated mesh settings in memory.";
+        }
+
         private void LoadMaterials()
         {
             Materials.Clear();
             var names = MaterialLibrary.GetMaterialNames();
-
-            if (names.Count == 0)
+            if (names.Count > 0)
             {
-                StatusMessage = "No materials found in Materials/materials.json.";
-                return;
+                foreach (var name in names) Materials.Add(name);
+                SelectedMaterial = Materials.First();
             }
-
-            foreach (var name in names)
-            {
-                Materials.Add(name);
-            }
-
-            // Select the first one by default to avoid null errors
-            SelectedMaterial = Materials.First();
         }
 
         [RelayCommand]
@@ -75,27 +121,74 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             if (file != null)
             {
                 InputFilePath = file.Path;
-                StatusMessage = $"Selected: {file.Name}. Ready to convert.";
+                await InitializeConversionAsync();
+            }
+        }
+
+        private async Task InitializeConversionAsync()
+        {
+            IsBusy = true;
+            StatusMessage = "Parsing OBJ file and creating base Bundle...";
+
+            try
+            {
+                await Task.Run(() =>
+                {
+                    // 1. Parse Geometry
+                    var geometryRaw = _parserService.ParseObj(InputFilePath);
+
+                    // 2. Process it (GeometryInput -> ProcessedGeometry)
+                    _cachedGeometry = _builderService.ProcessGeometry(geometryRaw);
+
+                    // 3. Create Base Bundle in Memory
+                    string currentMat = SelectedMaterial ?? "Default";
+                    _activeBundle = _builderService.CreateBundleInMemory(_cachedGeometry, currentMat);
+                });
+
+                // 4. Sync UI to Bundle Defaults
+                var firstMesh = _activeBundle.Blobs.OfType<MeshBlob>().FirstOrDefault();
+                if (firstMesh != null)
+                {
+                    _isOpaque = firstMesh.IsOpaque;
+                    _isDecal = firstMesh.IsDecal;
+                    _isTransparent = firstMesh.IsTransparent;
+                    _isShadow = firstMesh.IsShadow;
+                    _isNotShadow = firstMesh.IsNotShadow;
+                    _isAlphaToCoverage = firstMesh.IsAlphaToCoverage;
+                    _isMorphDamage = firstMesh.IsMorphDamage;
+
+                    // Trigger UI updates for properties
+                    OnPropertyChanged(nameof(IsOpaque));
+                    OnPropertyChanged(nameof(IsDecal));
+                    OnPropertyChanged(nameof(IsTransparent));
+                    OnPropertyChanged(nameof(IsShadow));
+                    OnPropertyChanged(nameof(IsNotShadow));
+                    OnPropertyChanged(nameof(IsAlphaToCoverage));
+                    OnPropertyChanged(nameof(IsMorphDamage));
+                }
+
+                IsFileSelected = true;
+                StatusMessage = "Ready. Adjust settings and Save.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error parsing file: {ex.Message}";
+                IsFileSelected = false;
+            }
+            finally
+            {
+                IsBusy = false;
             }
         }
 
         [RelayCommand]
         public async Task ConvertModelAsync()
         {
-            if (string.IsNullOrEmpty(InputFilePath) || !File.Exists(InputFilePath))
+            if (_activeBundle == null)
             {
-                StatusMessage = "Please select a valid .obj file first.";
+                StatusMessage = "No model loaded.";
                 return;
             }
-
-            if (string.IsNullOrEmpty(SelectedMaterial))
-            {
-                StatusMessage = "Please select a material from the list.";
-                return;
-            }
-
-            // Capture data on UI thread
-            string currentMaterial = SelectedMaterial;
 
             var savePicker = new FileSavePicker();
             var window = App.MainWindow;
@@ -107,32 +200,23 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             savePicker.FileTypeChoices.Add("Forza ModelBin", new[] { ".modelbin" });
 
             var outputFile = await savePicker.PickSaveFileAsync();
-            if (outputFile == null)
-            {
-                StatusMessage = "Operation cancelled.";
-                return;
-            }
+            if (outputFile == null) return;
 
             IsBusy = true;
-            StatusMessage = "Parsing OBJ file...";
+            StatusMessage = "Saving...";
 
             try
             {
                 await Task.Run(() =>
                 {
-                    var geometry = _parserService.ParseObj(InputFilePath);
-
-                    App.MainWindow.DispatcherQueue.TryEnqueue(() =>
-                        StatusMessage = $"Building ModelBin with '{currentMaterial}'...");
-
-                    _builderService.BuildCompatibleModelBin(outputFile.Path, geometry, currentMaterial);
+                    _builderService.SaveBundle(_activeBundle, outputFile.Path);
                 });
 
                 StatusMessage = $"Success! Saved to {outputFile.Name}";
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error: {ex.Message}";
+                StatusMessage = $"Error saving: {ex.Message}";
             }
             finally
             {

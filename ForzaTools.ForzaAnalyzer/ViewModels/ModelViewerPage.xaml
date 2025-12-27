@@ -27,6 +27,7 @@
                 <TextBlock Text="Model Inspector" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,12"/>
 
                 <TextBlock Grid.Row="1" Text="Loaded Files" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,0,0,8" VerticalAlignment="Top"/>
+                
                 <ScrollViewer Grid.Row="1" Margin="0,32,0,0" VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{x:Bind ViewModel.FileGroups, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
@@ -95,6 +96,12 @@
                         <TextBox x:Name="TransY" PlaceholderText="Y" Grid.Row="1" Grid.Column="2" TextChanged="Transform_TextChanged"/>
                         <TextBox x:Name="TransZ" PlaceholderText="Z" Grid.Row="1" Grid.Column="3" TextChanged="Transform_TextChanged"/>
                     </Grid>
+
+                    <Button Command="{x:Bind SelectedFile.SaveFileCommand, Mode=OneWay}" 
+                            IsEnabled="{x:Bind SelectedFile, Converter={StaticResource NullToFalseConverter}, Mode=OneWay}"
+                            Content="Save Changes to ModelBin" 
+                            Style="{StaticResource AccentButtonStyle}" 
+                            HorizontalAlignment="Stretch"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -105,4 +112,8 @@
             </Grid>
         </Grid>
     </Grid>
+    
+    <Page.Resources>
+        <local:NullToBoolConverter x:Key="NullToFalseConverter"/>
+    </Page.Resources>
 </Page>

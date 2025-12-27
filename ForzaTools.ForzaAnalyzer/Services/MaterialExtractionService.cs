@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression; // Required for ZipArchive
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -50,9 +51,9 @@ namespace ForzaTools.ForzaAnalyzer.Services
                         {
                             ProcessZip(path, materials);
                         }
-                        else if (extension == ".modelbin")
+                        else if (extension == ".modelbin" || extension == ".materialbin")
                         {
-                            ProcessModelBin(path, materials);
+                            ProcessFile(path, materials);
                         }
                     }
                     catch (Exception ex)
@@ -78,21 +79,26 @@ namespace ForzaTools.ForzaAnalyzer.Services
         {
             try
             {
-                string tempPath = Path.Combine(Path.GetTempPath(), "ForzaMatExtract_" + Guid.NewGuid());
-                Directory.CreateDirectory(tempPath);
-
-                using (var zip = new CustomZipFile(zipPath))
+                using (var fs = File.OpenRead(zipPath))
+                using (var archive = new ZipArchive(fs, ZipArchiveMode.Read))
                 {
-                    zip.ExtractToDirectory(tempPath);
+                    foreach (var entry in archive.Entries)
+                    {
+                        var entryExt = Path.GetExtension(entry.FullName).ToLower();
+                        if (entryExt == ".modelbin" || entryExt == ".materialbin")
+                        {
+                            // CRITICAL FIX: Bundle.Load requires seeking (Position property), 
+                            // but ZipArchive streams are non-seekable. We MUST copy to MemoryStream.
+                            using (var entryStream = entry.Open())
+                            using (var ms = new MemoryStream())
+                            {
+                                entryStream.CopyTo(ms);
+                                ms.Position = 0; // Reset position to start
+                                ProcessBundleStream(ms, materials, entry.FullName);
+                            }
+                        }
+                    }
                 }
-
-                var binFiles = Directory.GetFiles(tempPath, "*.modelbin", SearchOption.AllDirectories);
-                foreach (var bin in binFiles)
-                {
-                    ProcessModelBin(bin, materials);
-                }
-
-                Directory.Delete(tempPath, true);
             }
             catch (Exception ex)
             {
@@ -100,35 +106,49 @@ namespace ForzaTools.ForzaAnalyzer.Services
             }
         }
 
-        private void ProcessModelBin(string filePath, Dictionary<string, MaterialEntry> materials)
+        private void ProcessFile(string filePath, Dictionary<string, MaterialEntry> materials)
         {
             try
             {
+                // FileStream is seekable, so we can pass it directly
                 using var stream = File.OpenRead(filePath);
+                ProcessBundleStream(stream, materials, filePath);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error reading file {filePath}: {ex.Message}");
+            }
+        }
+
+        private void ProcessBundleStream(Stream stream, Dictionary<string, MaterialEntry> materials, string sourceName)
+        {
+            try
+            {
                 var bundle = new Bundle();
                 bundle.Load(stream);
 
                 foreach (var blob in bundle.Blobs)
                 {
-                    // Filter for Material Blobs using Tag checking like Program.cs or Type checking
-                    // Program.cs checks blob.Tag == Bundle.TAG_BLOB_Material, but we assume MaterialBlob type here for safety
+                    // Check for MaterialBlob. 
+                    // Note: Bundle.cs maps TAG_BLOB_MaterialInstance (MatI) to MaterialBlob.
                     if (blob is MaterialBlob materialBlob)
                     {
                         string materialName = GetMaterialName(materialBlob);
 
-                        // Fallback if no name found, similar to Program.cs logic
+                        // Fallback if no name found
                         if (string.IsNullOrEmpty(materialName))
                         {
                             materialName = $"unnamed_material_{Guid.NewGuid().ToString().Substring(0, 8)}";
                         }
 
-                        // 1. Generate Metadata Hex (Replicating Program.cs logic)
+                        // 1. Generate Metadata Hex
                         string metadataHex = CreateFormattedMetadataHex(materialName);
 
                         // 2. Get Blob Data (Hex)
                         byte[] blobData = materialBlob.GetContents();
                         string blobHex = BitConverter.ToString(blobData).Replace("-", " ");
 
+                        // Avoid duplicates
                         if (!materials.ContainsKey(materialName))
                         {
                             materials[materialName] = new MaterialEntry
@@ -142,7 +162,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error parsing {filePath}: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error parsing bundle in {sourceName}: {ex.Message}");
             }
         }
 
@@ -155,7 +175,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
                 return nameMeta.Name.TrimEnd('\0');
             }
 
-            // Check nested bundles (as per Program.cs logic)
+            // Check nested bundles
             if (materialBlob.Bundle != null)
             {
                 foreach (var nestedBlob in materialBlob.Bundle.Blobs)
@@ -170,8 +190,6 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
             return string.Empty;
         }
-
-        // --- Logic ported directly from Program.cs ---
 
         private string CreateFormattedMetadataHex(string materialName)
         {

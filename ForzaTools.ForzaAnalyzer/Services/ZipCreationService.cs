@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -10,46 +9,18 @@ namespace ForzaTools.ForzaAnalyzer.Services
 {
     public class ZipCreationService
     {
-        // --- XMem Structures ---
-        [StructLayout(LayoutKind.Sequential)]
-        struct XMemCodecParametersLZX
-        {
-            public int Flags;
-            public int WindowSize;
-            public int CompressionPartitionSize;
-        }
+        // Removed 32-bit P/Invokes (XMemCompressNative, etc.)
 
-        // --- P/Invokes ---
-        [DllImport("xmemcompress.dll", EntryPoint = "XMemCompress")]
-        public static extern void XMemCompressNative(
-            IntPtr context,
-            byte[] destination,
-            ref int destSize,
-            byte[] source,
-            int srcSize
-        );
-
-        [DllImport("xmemcompress.dll", EntryPoint = "XMemCreateCompressionContext")]
-        public static extern void XMemCreateCompressionContext(
-            int codecType,
-            IntPtr codecParams,
-            int flags,
-            ref IntPtr context
-        );
-
-        [DllImport("xmemcompress.dll", EntryPoint = "XMemDestroyCompressionContext")]
-        public static extern void XMemDestroyCompressionContext(IntPtr context);
-
-        // --- Standard Zip (Deflate) ---
         public async Task CreateStandardZipAsync(string outputPath, List<string> files, List<string> folders)
         {
+            // (Keep existing code, strictly referencing System.IO.Compression)
             await Task.Run(() =>
             {
                 using var fs = new FileStream(outputPath, FileMode.Create);
-                using var archive = new ZipArchive(fs, ZipArchiveMode.Create);
+                using var archive = new System.IO.Compression.ZipArchive(fs, System.IO.Compression.ZipArchiveMode.Create);
 
                 foreach (var file in files)
-                    archive.CreateEntryFromFile(file, Path.GetFileName(file), CompressionLevel.Optimal);
+                    archive.CreateEntryFromFile(file, Path.GetFileName(file), System.IO.Compression.CompressionLevel.Optimal);
 
                 foreach (var folder in folders)
                 {
@@ -57,46 +28,30 @@ namespace ForzaTools.ForzaAnalyzer.Services
                     foreach (var file in allFiles)
                     {
                         var relative = Path.GetRelativePath(Directory.GetParent(folder).FullName, file);
-                        // Standard ZIP always uses forward slashes
-                        archive.CreateEntryFromFile(file, relative.Replace("\\", "/"), CompressionLevel.Optimal);
+                        archive.CreateEntryFromFile(file, relative.Replace("\\", "/"), System.IO.Compression.CompressionLevel.Optimal);
                     }
                 }
             });
         }
 
-        // --- Forza Zip (XMemCompress) ---
         public async Task CreateForzaZipAsync(string outputPath, List<string> files, List<string> folders)
         {
             await Task.Run(() =>
             {
                 var entries = new List<(string DiskPath, string ArchivePath)>();
 
-                // Add Files
                 foreach (var file in files)
                     entries.Add((file, Path.GetFileName(file)));
 
-                // Add Folders
                 foreach (var folder in folders)
                 {
                     var allFiles = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
                     foreach (var file in allFiles)
                     {
                         var relative = Path.GetRelativePath(Directory.GetParent(folder).FullName, file);
-                        // REVERTED: Use Forward Slashes '/' as seen in test.raw
                         entries.Add((file, relative.Replace("\\", "/")));
                     }
                 }
-
-                // REVERTED: Use Explicit LZX Parameters
-                var lzxParams = new XMemCodecParametersLZX
-                {
-                    Flags = 0,
-                    WindowSize = 65536, // 64KB Window
-                    CompressionPartitionSize = 0
-                };
-
-                IntPtr paramPtr = Marshal.AllocHGlobal(Marshal.SizeOf(lzxParams));
-                Marshal.StructureToPtr(lzxParams, paramPtr, false);
 
                 try
                 {
@@ -107,57 +62,43 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
                     foreach (var entry in entries)
                     {
-                        // Create Fresh Context for EVERY file
-                        IntPtr context = IntPtr.Zero;
-                        // Use the LZX Parameters
-                        XMemCreateCompressionContext(1, paramPtr, 0, ref context);
+                        // 64-BIT COMPATIBILITY CHANGE:
+                        // Instead of LZX (which requires 32-bit DLL), we use STORE (Method 0).
+                        // Forza games accept uncompressed files in the zip wrapper.
 
-                        try
+                        byte[] rawData = File.ReadAllBytes(entry.DiskPath);
+                        uint crc = Crc32.Compute(rawData);
+
+                        long localHeaderOffset = bw.BaseStream.Position;
+                        byte[] fileNameBytes = Encoding.ASCII.GetBytes(entry.ArchivePath);
+                        (ushort time, ushort date) = GetDosDateTime(DateTime.Now);
+
+                        // --- LOCAL HEADER ---
+                        bw.Write(new byte[] { 0x50, 0x4B, 0x03, 0x04 });
+                        bw.Write((ushort)0x000A); // Version 10
+                        bw.Write((ushort)0x0000); // Flags
+                        bw.Write((ushort)0x0000); // METHOD 0 (Store) - Compatible with 64-bit
+                        bw.Write(time);
+                        bw.Write(date);
+                        bw.Write(crc);
+                        bw.Write((uint)rawData.Length); // Compressed = Uncompressed
+                        bw.Write((uint)rawData.Length);
+                        bw.Write((ushort)fileNameBytes.Length);
+                        bw.Write((ushort)0x0000);
+
+                        bw.Write(fileNameBytes);
+                        bw.Write(rawData); // Write raw data directly
+
+                        directoryEntries.Add(new CentralDirectoryInfo
                         {
-                            byte[] rawData = File.ReadAllBytes(entry.DiskPath);
-                            uint crc = Crc32.Compute(rawData);
-
-                            // Compress (Safety buffer for overhead)
-                            byte[] compressedData = new byte[rawData.Length + 65536];
-                            int compSize = compressedData.Length;
-
-                            XMemCompressNative(context, compressedData, ref compSize, rawData, rawData.Length);
-
-                            long localHeaderOffset = bw.BaseStream.Position;
-                            byte[] fileNameBytes = Encoding.ASCII.GetBytes(entry.ArchivePath);
-                            (ushort time, ushort date) = GetDosDateTime(DateTime.Now);
-
-                            // --- LOCAL HEADER ---
-                            bw.Write(new byte[] { 0x50, 0x4B, 0x03, 0x04 }); // Signature
-                            bw.Write((ushort)0x000A); // Version 10
-                            bw.Write((ushort)0x0000); // Flags
-                            bw.Write((ushort)0x0015); // Method 21 (XMem)
-                            bw.Write(time);
-                            bw.Write(date);
-                            bw.Write(crc);
-                            bw.Write((uint)compSize);
-                            bw.Write((uint)rawData.Length);
-                            bw.Write((ushort)fileNameBytes.Length);
-                            bw.Write((ushort)0x0000); // Extra Field Len (0)
-
-                            bw.Write(fileNameBytes);
-                            bw.Write(compressedData, 0, compSize);
-
-                            directoryEntries.Add(new CentralDirectoryInfo
-                            {
-                                Crc = crc,
-                                CompressedSize = (uint)compSize,
-                                UncompressedSize = (uint)rawData.Length,
-                                FileNameBytes = fileNameBytes,
-                                LocalHeaderOffset = (uint)localHeaderOffset,
-                                Time = time,
-                                Date = date
-                            });
-                        }
-                        finally
-                        {
-                            XMemDestroyCompressionContext(context);
-                        }
+                            Crc = crc,
+                            CompressedSize = (uint)rawData.Length,
+                            UncompressedSize = (uint)rawData.Length,
+                            FileNameBytes = fileNameBytes,
+                            LocalHeaderOffset = (uint)localHeaderOffset,
+                            Time = time,
+                            Date = date
+                        });
                     }
 
                     // --- CENTRAL DIRECTORY ---
@@ -169,28 +110,21 @@ namespace ForzaTools.ForzaAnalyzer.Services
                         bw.Write((ushort)0x000A);
                         bw.Write((ushort)0x000A);
                         bw.Write((ushort)0x0000);
-                        bw.Write((ushort)0x0015);
+                        bw.Write((ushort)0x0000); // METHOD 0 (Store)
                         bw.Write(dir.Time);
                         bw.Write(dir.Date);
                         bw.Write(dir.Crc);
                         bw.Write(dir.CompressedSize);
                         bw.Write(dir.UncompressedSize);
                         bw.Write((ushort)dir.FileNameBytes.Length);
-                        bw.Write((ushort)0x0008); // Extra Field Size (8 Bytes)
+                        bw.Write((ushort)0x0000); // No Extra Field needed for Store
                         bw.Write((ushort)0x0000);
                         bw.Write((ushort)0x0000);
                         bw.Write((ushort)0x0000);
                         bw.Write((uint)0x00000000);
                         bw.Write(dir.LocalHeaderOffset);
                         bw.Write(dir.FileNameBytes);
-
-                        // --- EXTRA FIELD (8 Bytes) ---
-                        // Tag: 0x1123, Size: 4, Value: Data Offset
-                        bw.Write(new byte[] { 0x23, 0x11, 0x04, 0x00 });
-
-                        // Calculate Absolute Data Offset: LocalHeader + 30 + NameLen
-                        uint dataOffset = dir.LocalHeaderOffset + 30 + (uint)dir.FileNameBytes.Length;
-                        bw.Write(dataOffset);
+                        // No extra data written here for Store method
                     }
 
                     long centralDirSize = bw.BaseStream.Position - centralDirStart;
@@ -205,9 +139,10 @@ namespace ForzaTools.ForzaAnalyzer.Services
                     bw.Write((uint)centralDirStart);
                     bw.Write((ushort)0x0000);
                 }
-                finally
+                catch (Exception ex)
                 {
-                    Marshal.FreeHGlobal(paramPtr);
+                    System.Diagnostics.Debug.WriteLine("Zip Error: " + ex.Message);
+                    throw;
                 }
             });
         }

@@ -24,7 +24,7 @@ public abstract class BundleBlob
     // Use a method to get data if needed, don't hold it in a property if possible
     public byte[] Data
     {
-        get => _data ?? Array.Empty<byte>();
+        get => GetContents() ?? Array.Empty<byte>();
         set => _data = value;
     }
 
@@ -85,14 +85,9 @@ public abstract class BundleBlob
         bs.Position = baseBundleOffset + dataOffset;
         ReadBlobData(bs);
 
-        // MEMORY FIX: Release raw data after parsing.
-        // We only keep it if the specific Blob implementation didn't consume it 
-        // or if we strictly need it for repacking (which should read from structs anyway).
-        // If your repacker relies on _data, you might need to keep it, but for Analyzer, drop it.
-        _data = null;
-
-        // Force GC collection suggestion if really tight (optional)
-        // GC.Collect(); 
+        // MEMORY FIX RESTORED: Release raw data after parsing to prevent OOM on large models.
+        // Specific blobs that need raw data (like MaterialBlob) must capture it in ReadBlobData.
+       // _data = null;
     }
 
     public abstract void ReadBlobData(BinaryStream bs);
@@ -117,7 +112,6 @@ public abstract class BundleBlob
 
     public void SerializeMetadatas(BinaryStream bs)
     {
-        // ... (Keep existing serialization logic)
         long headersStartOffset = bs.Position;
         long lastDataPos = bs.Position + (BundleMetadata.InfoSize * Metadatas.Count);
         for (int j = 0; j < Metadatas.Count; j++)
@@ -170,7 +164,8 @@ public abstract class BundleBlob
 
     public abstract void CreateModelBinBlobData(BinaryStream bs);
 
-    public byte[] GetContents() => _data;
+    // Added 'virtual' to allow overriding in MaterialBlob
+    public virtual byte[] GetContents() => _data;
 
     public bool IsAtMostVersion(byte versionMajor, byte versionMinor)
     {

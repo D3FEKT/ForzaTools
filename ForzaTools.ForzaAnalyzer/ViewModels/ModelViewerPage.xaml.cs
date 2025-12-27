@@ -13,7 +13,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Windows.UI;
 using SDX = SharpDX;
-using System.Numerics; // For Vector3/Vector4
+using System.Numerics;
 
 namespace ForzaTools.ForzaAnalyzer.Views
 {
@@ -21,7 +21,7 @@ namespace ForzaTools.ForzaAnalyzer.Views
     {
         public string Name { get; set; }
         public int Id { get; set; }
-        public ForzaGeometryData Data { get; set; } // Reference to raw data
+        public ForzaGeometryData Data { get; set; }
 
         private bool _isVisible = true;
         public bool IsVisible
@@ -43,7 +43,16 @@ namespace ForzaTools.ForzaAnalyzer.Views
         private Viewport3DX _viewport;
         private GroupModel3D _modelGroup;
         private Dictionary<ForzaMeshViewModel, MeshGeometryModel3D> _meshRenderMap = new();
-        private bool _isUpdatingUi = false; // Prevent loop
+        private bool _isUpdatingUi = false;
+
+        // Track the currently selected file for Saving and Unloading
+        public FileViewModel SelectedFile
+        {
+            get { return (FileViewModel)GetValue(SelectedFileProperty); }
+            set { SetValue(SelectedFileProperty, value); }
+        }
+        public static readonly DependencyProperty SelectedFileProperty =
+            DependencyProperty.Register("SelectedFile", typeof(FileViewModel), typeof(ModelViewerPage), new PropertyMetadata(null));
 
         public bool IsLoading
         {
@@ -73,16 +82,14 @@ namespace ForzaTools.ForzaAnalyzer.Views
         {
             if (_viewport != null) return;
 
-            // 1. Setup Viewport
             _viewport = new Viewport3DX
             {
                 BackgroundColor = Color.FromArgb(255, 30, 30, 30),
                 ShowCoordinateSystem = true,
                 ShowViewCube = true,
-                EffectsManager = new DefaultEffectsManager() // Ensure this line exists!
+                EffectsManager = new DefaultEffectsManager()
             };
 
-            // 2. Setup Camera
             _viewport.Camera = new PerspectiveCamera
             {
                 Position = new SDX.Vector3(50, 50, 50),
@@ -91,58 +98,72 @@ namespace ForzaTools.ForzaAnalyzer.Views
                 FarPlaneDistance = 50000
             };
 
-            // 3. Create Model Group
             _modelGroup = new GroupModel3D();
 
-            // --- ADD DEBUG CUBE HERE ---
+            // Default Debug Cube (Displayed only until first file load)
             var builder = new MeshBuilder();
-            // Use SDX.Vector3 explicitly to avoid conflict with System.Numerics
             builder.AddBox(new SDX.Vector3(0, 0, 0), 15, 15, 15);
-            var cubeGeometry = builder.ToMesh();
-
             var cubeModel = new MeshGeometryModel3D
             {
-                Geometry = cubeGeometry,
-                Material = new PhongMaterial { DiffuseColor = new SDX.Color4(1, 0, 0, 1) } // Red
+                Geometry = builder.ToMesh(),
+                Material = new PhongMaterial { DiffuseColor = new SDX.Color4(1, 0, 0, 1) }
             };
             _modelGroup.Children.Add(cubeModel);
-            // ---------------------------
 
-            // 4. Add Lights and Models to Viewport
             _viewport.Items.Add(new DirectionalLight3D { Direction = new SDX.Vector3(-1, -1, -1), Color = Microsoft.UI.Colors.White });
             _viewport.Items.Add(new AmbientLight3D { Color = Color.FromArgb(255, 100, 100, 100) });
             _viewport.Items.Add(_modelGroup);
 
-            // 5. Add Viewport to UI
             ViewportContainer.Children.Add(_viewport);
         }
 
         private async void FileList_ItemClick(object sender, ItemClickEventArgs e)
         {
             if (e.ClickedItem is not FileViewModel fileVm) return;
-            if (fileVm.ParsedObject is not ForzaTools.Bundles.Bundle bundle) return;
 
-            IsLoading = true;
+            // Prevent re-loading same file
+            if (SelectedFile == fileVm) return;
+
+            // 1. Unload previous file to free memory
+            if (SelectedFile != null)
+            {
+                SelectedFile.Unload();
+            }
+
+            // 2. Clear Scene IMMEDIATELY (Removes debug cube or previous model)
+            if (_modelGroup != null) _modelGroup.Children.Clear();
             Meshes.Clear();
             _meshRenderMap.Clear();
-            if (_modelGroup != null) _modelGroup.Children.Clear();
+
+            // 3. Set new selection and Show Loading
+            SelectedFile = fileVm;
+            IsLoading = true;
 
             try
             {
+                // 4. Force Load (Parses file into memory)
+                await fileVm.EnsureLoadedAsync();
+
+                if (fileVm.ParsedObject is not ForzaTools.Bundles.Bundle bundle)
+                {
+                    IsLoading = false;
+                    return;
+                }
+
+                // 5. Extract Meshes (Heavy work on background thread)
                 var result = await Task.Run(() =>
                 {
                     var importer = new ModelImporter();
                     return importer.ExtractModels(bundle);
                 });
 
+                // 6. Update 3D View (UI Thread)
                 this.DispatcherQueue.TryEnqueue(() =>
                 {
-                    // 1. Prepare bounds variables (using System.Numerics to match data)
                     var totalMin = new System.Numerics.Vector3(float.MaxValue);
                     var totalMax = new System.Numerics.Vector3(float.MinValue);
                     bool hasVertices = false;
 
-                    // 2. Populate Meshes and calculate bounds
                     for (int i = 0; i < result.Meshes.Count; i++)
                     {
                         var data = result.Meshes[i];
@@ -161,7 +182,6 @@ namespace ForzaTools.ForzaAnalyzer.Views
                         meshVm.PropertyChanged += MeshVm_PropertyChanged;
                         Meshes.Add(meshVm);
 
-                        // Update Bounds manually
                         if (data.Positions != null)
                         {
                             foreach (var p in data.Positions)
@@ -173,34 +193,24 @@ namespace ForzaTools.ForzaAnalyzer.Views
                         }
                     }
 
-                    // 3. Camera Logic (Only if we have data)
                     if (hasVertices && _viewport.Camera is PerspectiveCamera pCam)
                     {
-                        // Convert System.Numerics vectors to SharpDX vectors
                         var min = new SDX.Vector3(totalMin.X, totalMin.Y, totalMin.Z);
                         var max = new SDX.Vector3(totalMax.X, totalMax.Y, totalMax.Z);
-
                         var center = (max + min) * 0.5f;
                         var sizeVec = max - min;
                         var diagonal = sizeVec.Length();
 
-                        // Safety: Prevent zero-size issues
                         if (diagonal < 0.1f) diagonal = 10.0f;
 
-                        // Calculate Distance
                         var fovRad = pCam.FieldOfView * (Math.PI / 180.0);
-                        var radius = diagonal / 2.0;
-                        var dist = radius / Math.Sin(fovRad / 2.0);
-
-                        // Apply Padding (2.0x fits comfortably)
+                        var dist = (diagonal / 2.0) / Math.Sin(fovRad / 2.0);
                         dist *= 2.0f;
 
-                        // Preserve existing camera angle
                         var dir = pCam.LookDirection;
                         if (dir.LengthSquared() < 0.001f) dir = new SDX.Vector3(-1, -1, -1);
                         dir.Normalize();
 
-                        // Set new position
                         pCam.Position = center - (dir * (float)dist);
                         pCam.LookDirection = dir * (float)dist;
                     }
@@ -208,8 +218,9 @@ namespace ForzaTools.ForzaAnalyzer.Views
                     IsLoading = false;
                 });
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"Viewer Load Error: {ex}");
                 IsLoading = false;
             }
         }
@@ -245,11 +256,8 @@ namespace ForzaTools.ForzaAnalyzer.Views
             };
         }
 
-        // --- LIVE EDITING LOGIC ---
-
         private void CheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            // Populate UI fields from the clicked mesh
             if (sender is CheckBox cb && cb.DataContext is ForzaMeshViewModel vm && vm.IsVisible)
             {
                 _isUpdatingUi = true;
@@ -269,16 +277,12 @@ namespace ForzaTools.ForzaAnalyzer.Views
         {
             if (_isUpdatingUi) return;
 
-            // Parse inputs
             if (!float.TryParse(ScaleX.Text, out float sx)) return;
             if (!float.TryParse(ScaleY.Text, out float sy)) return;
             if (!float.TryParse(ScaleZ.Text, out float sz)) return;
             if (!float.TryParse(TransX.Text, out float tx)) return;
             if (!float.TryParse(TransY.Text, out float ty)) return;
             if (!float.TryParse(TransZ.Text, out float tz)) return;
-
-            var newScale = new Vector3(sx, sy, sz);
-            var newTrans = new Vector3(tx, ty, tz);
 
             foreach (var vm in Meshes)
             {
@@ -290,7 +294,6 @@ namespace ForzaTools.ForzaAnalyzer.Views
                     meshBlob.PositionTranslate = new Vector4(tx, ty, tz, meshBlob.PositionTranslate.W);
 
                     // 2. Re-calculate Vertex Positions Live
-                    // Formula: Pos = Raw * Scale + Translate
                     var geometry = mesh3d.Geometry as MeshGeometry3D;
                     if (geometry == null) continue;
 
@@ -298,17 +301,11 @@ namespace ForzaTools.ForzaAnalyzer.Views
                     for (int i = 0; i < vm.Data.RawPositions.Length; i++)
                     {
                         Vector3 raw = vm.Data.RawPositions[i];
-
-                        // Calculate new position
                         float nx = raw.X * sx + tx;
                         float ny = raw.Y * sy + ty;
                         float nz = raw.Z * sz + tz;
-
-                        // No swizzle (as per request), just update
                         newPositions.Add(new SDX.Vector3(nx, ny, nz));
                     }
-
-                    // Update Geometry
                     geometry.Positions = newPositions;
                     geometry.UpdateBounds();
                 }

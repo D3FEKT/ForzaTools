@@ -14,11 +14,17 @@ using ForzaTools.Bundles;
 using ForzaTools.Bundles.Blobs;
 using ForzaTools.Bundles.Metadata;
 using ForzaTools.CarScene;
+using ForzaTools.ForzaAnalyzer.Services;
 
 namespace ForzaTools.ForzaAnalyzer.ViewModels
 {
     public partial class FileViewModel : ObservableObject
     {
+        private readonly string _filePath;
+        private readonly FileService _fileService;
+        private bool _isLoaded;
+        private bool _isLoading;
+
         [ObservableProperty]
         private string _fileName;
 
@@ -28,17 +34,77 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         [ObservableProperty]
         private ObjectNode _selectedNode;
 
-        public object ParsedObject { get; }
+        // Make ParsedObject settable so we can populate it later
+        private object _parsedObject;
+        public object ParsedObject
+        {
+            get => _parsedObject;
+            private set => SetProperty(ref _parsedObject, value);
+        }
 
         public ObservableCollection<ObjectNode> Nodes { get; } = new();
 
-        public FileViewModel(string fileName, object parsedObject)
+        public FileViewModel(string fileName, string filePath, FileService fileService)
         {
             FileName = fileName;
-            ParsedObject = parsedObject;
-            FileType = parsedObject.GetType().Name;
+            _filePath = filePath;
+            _fileService = fileService;
 
-            BuildTree(parsedObject);
+            // Initial state
+            FileType = "Not Loaded";
+        }
+
+        public async Task EnsureLoadedAsync()
+        {
+            if (_isLoaded || _isLoading) return;
+
+            try
+            {
+                _isLoading = true;
+                FileType = "Loading...";
+
+                var obj = await _fileService.LoadFileAsync(_filePath);
+
+                if (obj != null)
+                {
+                    ParsedObject = obj;
+                    FileType = obj.GetType().Name;
+                    BuildTree(obj);
+                    _isLoaded = true;
+                }
+                else
+                {
+                    FileType = "Load Failed";
+                }
+            }
+            catch (Exception ex)
+            {
+                FileType = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        }
+
+        // NEW: Unload method to clear memory
+        public void Unload()
+        {
+            if (!_isLoaded) return;
+
+            // 1. Drop references to heavy objects
+            ParsedObject = null;
+            Nodes.Clear();
+            SelectedNode = null;
+
+            // 2. Reset state
+            FileType = "Not Loaded";
+            _isLoaded = false;
+            _isLoading = false;
+
+            // 3. Force GC to reclaim memory immediately (Aggressive cleanup)
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
         }
 
         [RelayCommand]
@@ -74,6 +140,8 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
         private void BuildTree(object obj)
         {
+            Nodes.Clear(); // Ensure empty before filling
+
             if (obj is Bundle bundle)
             {
                 var root = new ObjectNode("Bundle Root", bundle);
@@ -115,6 +183,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         }
     }
 
+    // ObjectNode and PropertyItem classes remain unchanged...
     public partial class ObjectNode : ObservableObject
     {
         public string Title { get; }
@@ -141,7 +210,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
                 try
                 {
-                    // Pass only the info needed for live retrieval
                     Properties.Add(new PropertyItem(p.Name, p, Data));
                 }
                 catch { }
@@ -188,14 +256,10 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
         public string Name { get; }
 
-        // REMOVED: private object _value; 
-        // We now read directly from source to support live updates from other views.
-
         public string ValueAsString
         {
             get
             {
-                // Live Read
                 object currentValue = null;
                 try { currentValue = _propInfo.GetValue(_target); } catch { }
 
@@ -211,16 +275,12 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                         var targetType = _propInfo.PropertyType;
                         object converted = null;
 
-                        // Custom Vector4 Parsing
                         if (targetType == typeof(Vector4))
                         {
                             var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries)
                                              .Select(s => float.Parse(s.Trim()))
                                              .ToArray();
 
-                            // Support inputting 3 or 4 values (W defaults to 1 or kept?)
-                            // Usually strict 4 for Vector4, but user might paste 3.
-                            // Let's assume strict 4 for PositionScale/Translate logic.
                             if (parts.Length >= 4)
                                 converted = new Vector4(parts[0], parts[1], parts[2], parts[3]);
                             else if (parts.Length == 3)
@@ -234,7 +294,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                         }
 
                         _propInfo.SetValue(_target, converted);
-                        // Notify UI that the value changed (even though we just set it)
                         OnPropertyChanged(nameof(ValueAsString));
                     }
                     catch { }
@@ -251,7 +310,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             _target = target;
         }
 
-        // Method to force refresh UI if modified externally
         public void Refresh()
         {
             OnPropertyChanged(nameof(ValueAsString));

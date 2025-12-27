@@ -13,6 +13,13 @@ namespace ForzaTools.Bundles.Blobs
 
         public override void ReadBlobData(BinaryStream bs)
         {
+            // Fix: Capture the raw data into CustomBlobData before BundleBlob.Read clears it.
+            // This ensures we have the data for extraction without keeping it for all blob types.
+            if (Data != null && Data.Length > 0)
+            {
+                CustomBlobData = Data;
+            }
+
             Bundle = new Bundle();
             Bundle.Load(bs.BaseStream);
         }
@@ -30,13 +37,6 @@ namespace ForzaTools.Bundles.Blobs
             // If we have custom data injected from the library, use it.
             if (CustomBlobData != null && CustomBlobData.Length > 0)
             {
-                // The data in materials.json usually includes the full Bundle structure
-                // We need to strip the Bundle Header (24 bytes) and Blob Header (16 bytes) 
-                // to get the inner content, OR if the blob expects inner content only.
-                // However, 'GetContents()' usually returns the raw blob data (minus bundle/blob headers).
-                // Based on ExtractionService logic: "byte[] blobData = materialBlob.GetContents();"
-                // So the data in JSON is the RAW CONTENT. We write it directly.
-
                 bs.Write(CustomBlobData);
             }
             else
@@ -45,6 +45,12 @@ namespace ForzaTools.Bundles.Blobs
                 string fallback = "scene/library/materials/error.materialbin";
                 Write7BitEncodedString(bs, fallback);
             }
+        }
+
+        // Override GetContents to return our persisted CustomBlobData
+        public override byte[] GetContents()
+        {
+            return CustomBlobData ?? base.GetContents();
         }
 
         // Standard 7-bit string writer for fallback paths
