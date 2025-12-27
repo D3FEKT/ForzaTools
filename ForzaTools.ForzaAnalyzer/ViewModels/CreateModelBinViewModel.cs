@@ -1,10 +1,12 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Numerics;
 using Windows.Storage.Pickers;
 using ForzaTools.ForzaAnalyzer.Services;
 using ForzaTools.Bundles;
@@ -13,33 +15,44 @@ using Microsoft.UI.Xaml;
 
 namespace ForzaTools.ForzaAnalyzer.ViewModels
 {
+    public partial class GroupViewModel : ObservableObject
+    {
+        public string Name { get; set; }
+        public string TextureName { get; set; } // Displayed in UI
+        public ObjGroup SourceGroup { get; set; }
+
+        [ObservableProperty]
+        private bool _isSelected = true;
+
+        private Action _onSelectionChanged;
+
+        public GroupViewModel(ObjGroup group, string texture, Action onSelectionChanged)
+        {
+            Name = group.Name;
+            TextureName = texture ?? "No Texture";
+            SourceGroup = group;
+            _onSelectionChanged = onSelectionChanged;
+        }
+
+        partial void OnIsSelectedChanged(bool value) => _onSelectionChanged?.Invoke();
+    }
+
     public partial class CreateModelBinViewModel : ObservableObject
     {
         private readonly ModelBuilderService _builderService = new ModelBuilderService();
         private readonly ObjParserService _parserService = new ObjParserService();
 
-        // The in-memory bundle we are editing
         private Bundle _activeBundle;
+        private ObjSceneData _rawScene;
 
-        // Changed type from GeometryInput to ProcessedGeometry
-        private ProcessedGeometry _cachedGeometry;
-
-        [ObservableProperty]
-        private string _statusMessage = "Select an OBJ file to begin.";
-
-        [ObservableProperty]
-        private string _inputFilePath;
-
-        [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(IsNotBusy))]
-        private bool _isBusy;
-
+        [ObservableProperty] private string _statusMessage = "Select an OBJ file to begin.";
+        [ObservableProperty] private string _mtlStatusMessage = ""; // Info about loaded .mtl
+        [ObservableProperty] private string _inputFilePath;
+        [ObservableProperty][NotifyPropertyChangedFor(nameof(IsNotBusy))] private bool _isBusy;
         public bool IsNotBusy => !IsBusy;
+        [ObservableProperty] private bool _isFileSelected;
 
-        [ObservableProperty]
-        private bool _isFileSelected;
-
-        // --- Live Edit Properties ---
+        // --- Live Edit Properties (Memory Only) ---
         [ObservableProperty] private bool _isOpaque = true;
         [ObservableProperty] private bool _isDecal;
         [ObservableProperty] private bool _isTransparent;
@@ -48,16 +61,57 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         [ObservableProperty] private bool _isAlphaToCoverage;
         [ObservableProperty] private bool _isMorphDamage = true;
 
-        // --- Material Selection ---
-        public ObservableCollection<string> Materials { get; } = new ObservableCollection<string>();
+        // --- Transform Editing ---
+        [ObservableProperty] private float _posX;
+        [ObservableProperty] private float _posY;
+        [ObservableProperty] private float _posZ;
+        [ObservableProperty] private float _scaleX = 1f;
+        [ObservableProperty] private float _scaleY = 1f;
+        [ObservableProperty] private float _scaleZ = 1f;
 
-        [ObservableProperty]
-        private string _selectedMaterial;
+        // --- Geometry Modifiers ---
+        [ObservableProperty] private float _rotationPitch;
+        [ObservableProperty] private float _rotationYaw;
+        [ObservableProperty] private float _rotationRoll;
+        [ObservableProperty] private bool _isMirrorEnabled;
+        [ObservableProperty] private bool _flipX_Pos;
+        [ObservableProperty] private bool _flipY_Pos;
+        [ObservableProperty] private bool _flipZ_Pos;
+        [ObservableProperty] private bool _flipX_Norm;
+        [ObservableProperty] private bool _flipY_Norm;
+        [ObservableProperty] private bool _flipZ_Norm;
+        [ObservableProperty] private bool _flipFaces;
+
+        // --- Material & Groups ---
+        public ObservableCollection<string> Materials { get; } = new ObservableCollection<string>();
+        [ObservableProperty] private string _selectedMaterial;
+
+        public ObservableCollection<GroupViewModel> ModelGroups { get; } = new ObservableCollection<GroupViewModel>();
 
         public CreateModelBinViewModel()
         {
             LoadMaterials();
         }
+
+        // --- Change Handlers ---
+        partial void OnRotationPitchChanged(float value) => RebuildBundle();
+        partial void OnRotationYawChanged(float value) => RebuildBundle();
+        partial void OnRotationRollChanged(float value) => RebuildBundle();
+        partial void OnIsMirrorEnabledChanged(bool value) => RebuildBundle();
+        partial void OnFlipX_PosChanged(bool value) => RebuildBundle();
+        partial void OnFlipY_PosChanged(bool value) => RebuildBundle();
+        partial void OnFlipZ_PosChanged(bool value) => RebuildBundle();
+        partial void OnFlipX_NormChanged(bool value) => RebuildBundle();
+        partial void OnFlipY_NormChanged(bool value) => RebuildBundle();
+        partial void OnFlipZ_NormChanged(bool value) => RebuildBundle();
+        partial void OnFlipFacesChanged(bool value) => RebuildBundle();
+
+        partial void OnPosXChanged(float value) => UpdateTransformInMemory();
+        partial void OnPosYChanged(float value) => UpdateTransformInMemory();
+        partial void OnPosZChanged(float value) => UpdateTransformInMemory();
+        partial void OnScaleXChanged(float value) => UpdateTransformInMemory();
+        partial void OnScaleYChanged(float value) => UpdateTransformInMemory();
+        partial void OnScaleZChanged(float value) => UpdateTransformInMemory();
 
         partial void OnSelectedMaterialChanged(string value)
         {
@@ -68,7 +122,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             }
         }
 
-        // Property changed handlers for Live Edit flags
         partial void OnIsOpaqueChanged(bool value) => UpdateMeshFlags();
         partial void OnIsDecalChanged(bool value) => UpdateMeshFlags();
         partial void OnIsTransparentChanged(bool value) => UpdateMeshFlags();
@@ -80,7 +133,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         private void UpdateMeshFlags()
         {
             if (_activeBundle == null) return;
-
             foreach (var mesh in _activeBundle.Blobs.OfType<MeshBlob>())
             {
                 mesh.IsOpaque = IsOpaque;
@@ -91,7 +143,16 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                 mesh.IsAlphaToCoverage = IsAlphaToCoverage;
                 mesh.IsMorphDamage = IsMorphDamage;
             }
-            StatusMessage = "Updated mesh settings in memory.";
+        }
+
+        private void UpdateTransformInMemory()
+        {
+            if (_activeBundle == null) return;
+            foreach (var mesh in _activeBundle.Blobs.OfType<MeshBlob>())
+            {
+                mesh.PositionTranslate = new Vector4(PosX, PosY, PosZ, 0);
+                mesh.PositionScale = new Vector4(ScaleX, ScaleY, ScaleZ, 1);
+            }
         }
 
         private void LoadMaterials()
@@ -128,56 +189,203 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         private async Task InitializeConversionAsync()
         {
             IsBusy = true;
-            StatusMessage = "Parsing OBJ file and creating base Bundle...";
+            StatusMessage = "Parsing OBJ file...";
+            MtlStatusMessage = "";
+
+            try
+            {
+                // 1. Parse OBJ
+                _rawScene = await Task.Run(() => _parserService.ParseObj(InputFilePath));
+
+                // 2. Locate and Parse MTL
+                Dictionary<string, string> matTextures = new Dictionary<string, string>();
+                string mtlPath = null;
+
+                // Try path from OBJ (mtllib)
+                if (!string.IsNullOrEmpty(_rawScene.MaterialLib))
+                {
+                    string dir = Path.GetDirectoryName(InputFilePath);
+                    string checkPath = Path.Combine(dir, _rawScene.MaterialLib);
+                    if (File.Exists(checkPath)) mtlPath = checkPath;
+                }
+
+                // Fallback: Same name as OBJ
+                if (mtlPath == null)
+                {
+                    string sameNameMtl = Path.ChangeExtension(InputFilePath, ".mtl");
+                    if (File.Exists(sameNameMtl)) mtlPath = sameNameMtl;
+                }
+
+                if (mtlPath != null)
+                {
+                    matTextures = await Task.Run(() => _parserService.ParseMtl(mtlPath));
+                    MtlStatusMessage = $"Loaded MTL: {Path.GetFileName(mtlPath)}";
+                }
+                else
+                {
+                    MtlStatusMessage = "No associated MTL file found.";
+                }
+
+                // 3. Populate Groups with Texture Info
+                ModelGroups.Clear();
+                foreach (var g in _rawScene.Groups)
+                {
+                    if (g.Indices.Count > 0)
+                    {
+                        string tex = null;
+                        if (!string.IsNullOrEmpty(g.MaterialName) && matTextures.ContainsKey(g.MaterialName))
+                        {
+                            tex = matTextures[g.MaterialName];
+                        }
+                        ModelGroups.Add(new GroupViewModel(g, tex, () => RebuildBundle()));
+                    }
+                }
+
+                await RebuildBundleInternalAsync();
+
+                IsFileSelected = true;
+                StatusMessage = "Ready.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error: {ex.Message}";
+                IsFileSelected = false;
+            }
+            finally { IsBusy = false; }
+        }
+
+        private void RebuildBundle()
+        {
+            if (_rawScene == null) return;
+            if (IsBusy) return;
+            _ = RebuildBundleInternalAsync();
+        }
+
+        private async Task RebuildBundleInternalAsync()
+        {
+            IsBusy = true;
+            StatusMessage = "Processing geometry...";
 
             try
             {
                 await Task.Run(() =>
                 {
-                    // 1. Parse Geometry
-                    var geometryRaw = _parserService.ParseObj(InputFilePath);
+                    var selectedIndices = ModelGroups
+                        .Where(g => g.IsSelected)
+                        .SelectMany(g => g.SourceGroup.Indices)
+                        .ToArray();
 
-                    // 2. Process it (GeometryInput -> ProcessedGeometry)
-                    _cachedGeometry = _builderService.ProcessGeometry(geometryRaw);
+                    if (selectedIndices.Length == 0) return;
 
-                    // 3. Create Base Bundle in Memory
+                    var positions = (Vector3[])_rawScene.Positions.Clone();
+                    var normals = (Vector3[])_rawScene.Normals.Clone();
+
+                    ApplyGeometryModifiers(positions, normals, ref selectedIndices);
+
+                    var geometryInput = new GeometryInput
+                    {
+                        Name = _rawScene.Name,
+                        Positions = positions,
+                        Normals = normals,
+                        UVs = _rawScene.UVs,
+                        Indices = selectedIndices
+                    };
+
+                    var processed = _builderService.ProcessGeometry(geometryInput);
                     string currentMat = SelectedMaterial ?? "Default";
-                    _activeBundle = _builderService.CreateBundleInMemory(_cachedGeometry, currentMat);
+                    _activeBundle = _builderService.CreateBundleInMemory(processed, currentMat);
                 });
 
-                // 4. Sync UI to Bundle Defaults
-                var firstMesh = _activeBundle.Blobs.OfType<MeshBlob>().FirstOrDefault();
-                if (firstMesh != null)
+                if (_activeBundle != null)
                 {
-                    _isOpaque = firstMesh.IsOpaque;
-                    _isDecal = firstMesh.IsDecal;
-                    _isTransparent = firstMesh.IsTransparent;
-                    _isShadow = firstMesh.IsShadow;
-                    _isNotShadow = firstMesh.IsNotShadow;
-                    _isAlphaToCoverage = firstMesh.IsAlphaToCoverage;
-                    _isMorphDamage = firstMesh.IsMorphDamage;
+                    var firstMesh = _activeBundle.Blobs.OfType<MeshBlob>().FirstOrDefault();
+                    if (firstMesh != null)
+                    {
+                        _posX = firstMesh.PositionTranslate.X;
+                        _posY = firstMesh.PositionTranslate.Y;
+                        _posZ = firstMesh.PositionTranslate.Z;
+                        _scaleX = firstMesh.PositionScale.X;
+                        _scaleY = firstMesh.PositionScale.Y;
+                        _scaleZ = firstMesh.PositionScale.Z;
 
-                    // Trigger UI updates for properties
-                    OnPropertyChanged(nameof(IsOpaque));
-                    OnPropertyChanged(nameof(IsDecal));
-                    OnPropertyChanged(nameof(IsTransparent));
-                    OnPropertyChanged(nameof(IsShadow));
-                    OnPropertyChanged(nameof(IsNotShadow));
-                    OnPropertyChanged(nameof(IsAlphaToCoverage));
-                    OnPropertyChanged(nameof(IsMorphDamage));
+                        OnPropertyChanged(nameof(PosX));
+                        OnPropertyChanged(nameof(PosY));
+                        OnPropertyChanged(nameof(PosZ));
+                        OnPropertyChanged(nameof(ScaleX));
+                        OnPropertyChanged(nameof(ScaleY));
+                        OnPropertyChanged(nameof(ScaleZ));
+
+                        UpdateMeshFlags();
+                    }
+                    StatusMessage = "Geometry updated.";
                 }
-
-                IsFileSelected = true;
-                StatusMessage = "Ready. Adjust settings and Save.";
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error parsing file: {ex.Message}";
-                IsFileSelected = false;
+                StatusMessage = $"Rebuild Error: {ex.Message}";
             }
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        private void ApplyGeometryModifiers(Vector3[] pos, Vector3[] norm, ref int[] indices)
+        {
+            if (IsMirrorEnabled)
+            {
+                for (int i = 0; i < pos.Length; i++)
+                {
+                    pos[i].X *= -1;
+                    norm[i].X *= -1;
+                }
+                for (int i = 0; i < indices.Length; i += 3)
+                {
+                    int temp = indices[i + 1];
+                    indices[i + 1] = indices[i + 2];
+                    indices[i + 2] = temp;
+                }
+            }
+
+            if (RotationPitch != 0 || RotationYaw != 0 || RotationRoll != 0)
+            {
+                float p = RotationPitch * (MathF.PI / 180f);
+                float y = RotationYaw * (MathF.PI / 180f);
+                float r = RotationRoll * (MathF.PI / 180f);
+                var rotMatrix = Matrix4x4.CreateFromYawPitchRoll(y, p, r);
+
+                for (int i = 0; i < pos.Length; i++)
+                {
+                    pos[i] = Vector3.Transform(pos[i], rotMatrix);
+                    norm[i] = Vector3.TransformNormal(norm[i], rotMatrix);
+                }
+            }
+
+            bool fx = FlipX_Pos, fy = FlipY_Pos, fz = FlipZ_Pos;
+            bool nx = FlipX_Norm, ny = FlipY_Norm, nz = FlipZ_Norm;
+
+            if (fx || fy || fz || nx || ny || nz)
+            {
+                for (int i = 0; i < pos.Length; i++)
+                {
+                    if (fx) pos[i].X *= -1;
+                    if (fy) pos[i].Y *= -1;
+                    if (fz) pos[i].Z *= -1;
+
+                    if (nx) norm[i].X *= -1;
+                    if (ny) norm[i].Y *= -1;
+                    if (nz) norm[i].Z *= -1;
+                }
+            }
+
+            if (FlipFaces)
+            {
+                for (int i = 0; i < indices.Length; i += 3)
+                {
+                    int temp = indices[i + 1];
+                    indices[i + 1] = indices[i + 2];
+                    indices[i + 2] = temp;
+                }
             }
         }
 
@@ -207,11 +415,11 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
             try
             {
+                UpdateTransformInMemory();
                 await Task.Run(() =>
                 {
                     _builderService.SaveBundle(_activeBundle, outputFile.Path);
                 });
-
                 StatusMessage = $"Success! Saved to {outputFile.Name}";
             }
             catch (Exception ex)

@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:viewmodels="using:ForzaTools.ForzaAnalyzer.ViewModels"
     xmlns:views="using:ForzaTools.ForzaAnalyzer.Views"
+    xmlns:ui="using:CommunityToolkit.WinUI.UI.Controls"
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
@@ -18,76 +19,163 @@
     </Page.DataContext>
 
     <Grid Padding="24">
-        <ScrollViewer>
-            <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
+        <InfoBar Grid.Row="0" Title="Status" IsOpen="True" IsClosable="False" Severity="Informational" 
+                 Message="{x:Bind ViewModel.StatusMessage, Mode=OneWay}" Margin="0,0,0,12"/>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="20">
                 <TextBlock Text="OBJ to ModelBin Converter" Style="{StaticResource TitleTextBlockStyle}"/>
 
-                <TextBlock Text="Convert standard .obj 3D models into Forza Horizon 4/5 compatible ModelBin files." 
-                           TextWrapping="Wrap" Style="{StaticResource BodyTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Grid ColumnDefinitions="*, 24, 320">
 
-                <StackPanel Spacing="8">
-                    <TextBlock Text="1. Select Input File (.obj)" Style="{StaticResource SubtitleTextBlockStyle}"/>
-                    <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
-                        <TextBox Text="{x:Bind ViewModel.InputFilePath, Mode=OneWay}" 
-                                 PlaceholderText="Select an .obj file..." 
-                                 IsReadOnly="True"/>
-                        <Button Grid.Column="1" Command="{x:Bind ViewModel.PickInputFileCommand}" Content="Browse..."/>
-                    </Grid>
-                </StackPanel>
+                    <StackPanel Grid.Column="0" Spacing="20">
 
-                <StackPanel Spacing="20" Visibility="{x:Bind ViewModel.IsFileSelected, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="1. Select Input File (.obj)" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                            <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
+                                <TextBox Text="{x:Bind ViewModel.InputFilePath, Mode=OneWay}" 
+                                         PlaceholderText="Select an .obj file..." IsReadOnly="True"/>
+                                <Button Grid.Column="1" Command="{x:Bind ViewModel.PickInputFileCommand}" Content="Browse..."/>
+                            </Grid>
+                        </StackPanel>
 
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="2. Material" Style="{StaticResource SubtitleTextBlockStyle}"/>
-                        <ComboBox ItemsSource="{x:Bind ViewModel.Materials}"
-                                  SelectedItem="{x:Bind ViewModel.SelectedMaterial, Mode=TwoWay}"
-                                  HorizontalAlignment="Stretch"
-                                  PlaceholderText="Select a material..."/>
+                        <StackPanel Spacing="20" Visibility="{x:Bind ViewModel.IsFileSelected, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="2. Material" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                                <ComboBox ItemsSource="{x:Bind ViewModel.Materials}"
+                                          SelectedItem="{x:Bind ViewModel.SelectedMaterial, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          PlaceholderText="Select a material..."/>
+                            </StackPanel>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="3. Mesh Configuration" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                                <Grid ColumnDefinitions="*,*">
+                                    <StackPanel Spacing="4" Grid.Column="0">
+                                        <TextBlock Text="Bucket Flags" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                                        <CheckBox Content="Is Opaque" IsChecked="{x:Bind ViewModel.IsOpaque, Mode=TwoWay}"/>
+                                        <CheckBox Content="Is Decal" IsChecked="{x:Bind ViewModel.IsDecal, Mode=TwoWay}"/>
+                                        <CheckBox Content="Is Transparent" IsChecked="{x:Bind ViewModel.IsTransparent, Mode=TwoWay}"/>
+                                        <CheckBox Content="Is Shadow" IsChecked="{x:Bind ViewModel.IsShadow, Mode=TwoWay}"/>
+                                        <CheckBox Content="Is Not Shadow" IsChecked="{x:Bind ViewModel.IsNotShadow, Mode=TwoWay}"/>
+                                        <CheckBox Content="Alpha To Coverage" IsChecked="{x:Bind ViewModel.IsAlphaToCoverage, Mode=TwoWay}"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="4" Grid.Column="1">
+                                        <TextBlock Text="Advanced" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                                        <CheckBox Content="Is Morph Damage" IsChecked="{x:Bind ViewModel.IsMorphDamage, Mode=TwoWay}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="4. Position &amp; Scale" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <NumberBox Grid.Row="0" Grid.Column="0" Header="Scale X" Value="{x:Bind ViewModel.ScaleX, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                    <NumberBox Grid.Row="0" Grid.Column="1" Header="Scale Y" Value="{x:Bind ViewModel.ScaleY, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                    <NumberBox Grid.Row="0" Grid.Column="2" Header="Scale Z" Value="{x:Bind ViewModel.ScaleZ, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+
+                                    <NumberBox Grid.Row="1" Grid.Column="0" Header="Pos X" Value="{x:Bind ViewModel.PosX, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                    <NumberBox Grid.Row="1" Grid.Column="1" Header="Pos Y" Value="{x:Bind ViewModel.PosY, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                    <NumberBox Grid.Row="1" Grid.Column="2" Header="Pos Z" Value="{x:Bind ViewModel.PosZ, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel Spacing="12">
+                                <Button Command="{x:Bind ViewModel.ConvertModelCommand}" 
+                                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                                        Style="{StaticResource AccentButtonStyle}" 
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="16" Height="16" Foreground="White"/>
+                                        <TextBlock Text="Save ModelBin"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+
+                        </StackPanel>
                     </StackPanel>
 
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="3. Mesh Configuration" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                    <StackPanel Grid.Column="2" Spacing="20" Visibility="{x:Bind ViewModel.IsFileSelected, Mode=OneWay, Converter={StaticResource BoolToVis}}">
 
-                        <Grid ColumnDefinitions="*,*">
-                            <StackPanel Spacing="4" Grid.Column="0">
-                                <TextBlock Text="Bucket Flags" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                                <CheckBox Content="Is Opaque" IsChecked="{x:Bind ViewModel.IsOpaque, Mode=TwoWay}"/>
-                                <CheckBox Content="Is Decal" IsChecked="{x:Bind ViewModel.IsDecal, Mode=TwoWay}"/>
-                                <CheckBox Content="Is Transparent" IsChecked="{x:Bind ViewModel.IsTransparent, Mode=TwoWay}"/>
-                                <CheckBox Content="Is Shadow" IsChecked="{x:Bind ViewModel.IsShadow, Mode=TwoWay}"/>
-                                <CheckBox Content="Is Not Shadow" IsChecked="{x:Bind ViewModel.IsNotShadow, Mode=TwoWay}"/>
-                                <CheckBox Content="Alpha To Coverage" IsChecked="{x:Bind ViewModel.IsAlphaToCoverage, Mode=TwoWay}"/>
-                            </StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-                            <StackPanel Spacing="4" Grid.Column="1">
-                                <TextBlock Text="Advanced" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                                <CheckBox Content="Is Morph Damage" IsChecked="{x:Bind ViewModel.IsMorphDamage, Mode=TwoWay}"/>
-                            </StackPanel>
+                            <TextBlock Text="Model Groups" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,0,0,8"/>
+
+                            <ListView Grid.Row="1" ItemsSource="{x:Bind ViewModel.ModelGroups}" Height="200" 
+                                      BorderThickness="1" BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}" CornerRadius="4">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="viewmodels:GroupViewModel">
+                                        <Grid ColumnDefinitions="Auto, *">
+                                            <CheckBox Grid.Column="0" Content="{x:Bind Name}" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" Margin="4,0,0,0"/>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind TextureName}" VerticalAlignment="Center" HorizontalAlignment="Right" 
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,0,8,0"
+                                                       TextTrimming="CharacterEllipsis" MaxWidth="120" ToolTipService.ToolTip="{x:Bind TextureName}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+
+                            <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.MtlStatusMessage, Mode=OneWay}" 
+                                       FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" 
+                                       Margin="0,4,0,0" TextWrapping="Wrap"/>
                         </Grid>
-                    </StackPanel>
 
-                    <StackPanel Spacing="12">
-                        <Button Command="{x:Bind ViewModel.ConvertModelCommand}" 
-                                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
-                                Style="{StaticResource AccentButtonStyle}" 
-                                HorizontalAlignment="Stretch">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" 
-                                              Width="16" Height="16" 
-                                              Foreground="White"/>
-                                <TextBlock Text="Save ModelBin"/>
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Geometry Modifiers" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                            <TextBlock Text="Changes here trigger re-processing." FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                            <TextBlock Text="Rotation (Degrees)" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0"/>
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                <NumberBox Header="Pitch (X)" Value="{x:Bind ViewModel.RotationPitch, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                <NumberBox Header="Yaw (Y)" Grid.Column="1" Value="{x:Bind ViewModel.RotationYaw, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                <NumberBox Header="Roll (Z)" Grid.Column="2" Value="{x:Bind ViewModel.RotationRoll, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                            </Grid>
+
+                            <MenuFlyoutSeparator Margin="0,8"/>
+
+                            <TextBlock Text="Symmetry" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0"/>
+                            <CheckBox Content="Mirror Geometry (X-Axis)" IsChecked="{x:Bind ViewModel.IsMirrorEnabled, Mode=TwoWay}"/>
+                            <TextBlock Text="Mirrors positions, normals, and flips faces." FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="28,-4,0,0"/>
+
+                            <MenuFlyoutSeparator Margin="0,8"/>
+
+                            <TextBlock Text="Manual Flips" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0"/>
+
+                            <TextBlock Text="Position" Style="{StaticResource CaptionTextBlockStyle}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="16">
+                                <CheckBox Content="X" IsChecked="{x:Bind ViewModel.FlipX_Pos, Mode=TwoWay}"/>
+                                <CheckBox Content="Y" IsChecked="{x:Bind ViewModel.FlipY_Pos, Mode=TwoWay}"/>
+                                <CheckBox Content="Z" IsChecked="{x:Bind ViewModel.FlipZ_Pos, Mode=TwoWay}"/>
                             </StackPanel>
-                        </Button>
+
+                            <TextBlock Text="Normals" Style="{StaticResource CaptionTextBlockStyle}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="16">
+                                <CheckBox Content="X" IsChecked="{x:Bind ViewModel.FlipX_Norm, Mode=TwoWay}"/>
+                                <CheckBox Content="Y" IsChecked="{x:Bind ViewModel.FlipY_Norm, Mode=TwoWay}"/>
+                                <CheckBox Content="Z" IsChecked="{x:Bind ViewModel.FlipZ_Norm, Mode=TwoWay}"/>
+                            </StackPanel>
+
+                            <CheckBox Content="Flip Faces (Winding)" IsChecked="{x:Bind ViewModel.FlipFaces, Mode=TwoWay}" Margin="0,8,0,0"/>
+                        </StackPanel>
                     </StackPanel>
 
-                </StackPanel>
-
-                <InfoBar Title="Status" 
-                         IsOpen="True" 
-                         IsClosable="False"
-                         Severity="Informational"
-                         Message="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"/>
+                </Grid>
             </StackPanel>
         </ScrollViewer>
     </Grid>

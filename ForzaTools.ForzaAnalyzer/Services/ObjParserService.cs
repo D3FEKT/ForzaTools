@@ -6,6 +6,25 @@ using System.Numerics;
 
 namespace ForzaTools.ForzaAnalyzer.Services
 {
+    // Holds data for a specific group/object in the OBJ
+    public class ObjGroup
+    {
+        public string Name { get; set; }
+        public string MaterialName { get; set; } // The material used by this group
+        public List<int> Indices { get; set; } = new List<int>();
+    }
+
+    // Represents the entire loaded OBJ scene
+    public class ObjSceneData
+    {
+        public string Name { get; set; }
+        public string MaterialLib { get; set; } // The .mtl filename defined in the OBJ
+        public Vector3[] Positions { get; set; }
+        public Vector3[] Normals { get; set; }
+        public Vector2[] UVs { get; set; }
+        public List<ObjGroup> Groups { get; set; } = new List<ObjGroup>();
+    }
+
     public class ObjParserService
     {
         private class VertexKey : IEquatable<VertexKey>
@@ -16,19 +35,21 @@ namespace ForzaTools.ForzaAnalyzer.Services
             public override int GetHashCode() => HashCode.Combine(V, VT, VN);
         }
 
-        public GeometryInput ParseObj(string filePath)
+        public ObjSceneData ParseObj(string filePath)
         {
             List<Vector3> rawPositions = new();
             List<Vector3> rawNormals = new();
             List<Vector2> rawUVs = new();
 
-            // Result Lists
             List<Vector3> finalPositions = new();
             List<Vector3> finalNormals = new();
             List<Vector2> finalUVs = new();
-            List<int> finalIndices = new();
 
-            // Index Flattening Cache
+            var groups = new List<ObjGroup>();
+            var currentGroup = new ObjGroup { Name = "Default" };
+            groups.Add(currentGroup);
+
+            string materialLib = null;
             var indexCache = new Dictionary<VertexKey, int>();
 
             foreach (var line in File.ReadLines(filePath))
@@ -41,54 +62,99 @@ namespace ForzaTools.ForzaAnalyzer.Services
 
                 switch (tokens[0])
                 {
-                    case "v": // Position
-                        if (tokens.Length >= 4)
-                            // FIX 1: Negate Z (-ParseFloat) to fix "Behind" reflections
-                            rawPositions.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), -ParseFloat(tokens[3])));
+                    case "mtllib":
+                        if (tokens.Length > 1) materialLib = tokens[1];
                         break;
 
-                    case "vn": // Normal
-                        if (tokens.Length >= 4)
-                            // FIX 2: Negate Z (-ParseFloat) for normals too
-                            rawNormals.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), -ParseFloat(tokens[3])));
+                    case "usemtl":
+                        if (tokens.Length > 1) currentGroup.MaterialName = tokens[1];
                         break;
 
-                    case "vt": // UV
-                        if (tokens.Length >= 3)
+                    case "g":
+                    case "o":
+                        string groupName = tokens.Length > 1 ? tokens[1] : $"Group_{groups.Count}";
+                        if (currentGroup.Indices.Count > 0)
                         {
-                            // FIX 3: REMOVE "1.0f - ". Pass raw V.
-                            // GeometryProcessingService already flips V. Doing it here too was un-flipping it.
-                            rawUVs.Add(new Vector2(ParseFloat(tokens[1]), ParseFloat(tokens[2])));
+                            currentGroup = new ObjGroup { Name = groupName };
+                            groups.Add(currentGroup);
+                        }
+                        else
+                        {
+                            currentGroup.Name = groupName;
                         }
                         break;
 
-                    case "f": // Face
-                        // Triangulate (Fan method): 0,1,2 -> 0,2,3 -> ...
+                    case "v":
+                        if (tokens.Length >= 4)
+                            rawPositions.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), -ParseFloat(tokens[3])));
+                        break;
+
+                    case "vn":
+                        if (tokens.Length >= 4)
+                            rawNormals.Add(new Vector3(ParseFloat(tokens[1]), ParseFloat(tokens[2]), -ParseFloat(tokens[3])));
+                        break;
+
+                    case "vt":
+                        if (tokens.Length >= 3)
+                            rawUVs.Add(new Vector2(ParseFloat(tokens[1]), ParseFloat(tokens[2])));
+                        break;
+
+                    case "f":
                         int vCount = tokens.Length - 1;
                         for (int i = 0; i < vCount - 2; i++)
                         {
-                            ProcessVertexToken(tokens[1], rawPositions, rawNormals, rawUVs, finalPositions, finalNormals, finalUVs, finalIndices, indexCache);
-                            ProcessVertexToken(tokens[2 + i], rawPositions, rawNormals, rawUVs, finalPositions, finalNormals, finalUVs, finalIndices, indexCache);
-                            ProcessVertexToken(tokens[3 + i], rawPositions, rawNormals, rawUVs, finalPositions, finalNormals, finalUVs, finalIndices, indexCache);
+                            ProcessVertexToken(tokens[1], rawPositions, rawNormals, rawUVs, finalPositions, finalNormals, finalUVs, currentGroup.Indices, indexCache);
+                            ProcessVertexToken(tokens[2 + i], rawPositions, rawNormals, rawUVs, finalPositions, finalNormals, finalUVs, currentGroup.Indices, indexCache);
+                            ProcessVertexToken(tokens[3 + i], rawPositions, rawNormals, rawUVs, finalPositions, finalNormals, finalUVs, currentGroup.Indices, indexCache);
                         }
                         break;
                 }
             }
 
-            // Fallback if no normals provided
             if (finalNormals.Count == 0 && finalPositions.Count > 0)
             {
                 for (int i = 0; i < finalPositions.Count; i++) finalNormals.Add(Vector3.UnitY);
             }
 
-            return new GeometryInput
+            return new ObjSceneData
             {
                 Name = Path.GetFileNameWithoutExtension(filePath),
+                MaterialLib = materialLib,
                 Positions = finalPositions.ToArray(),
                 Normals = finalNormals.ToArray(),
                 UVs = finalUVs.ToArray(),
-                Indices = finalIndices.ToArray()
+                Groups = groups
             };
+        }
+
+        // Returns a Dictionary mapping MaterialName -> DiffuseTextureMap
+        public Dictionary<string, string> ParseMtl(string filePath)
+        {
+            var result = new Dictionary<string, string>();
+            string currentMaterial = null;
+
+            if (!File.Exists(filePath)) return result;
+
+            foreach (var line in File.ReadLines(filePath))
+            {
+                var trim = line.Trim();
+                if (string.IsNullOrWhiteSpace(trim) || trim.StartsWith("#")) continue;
+
+                var tokens = trim.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length < 2) continue;
+
+                if (tokens[0] == "newmtl")
+                {
+                    currentMaterial = tokens[1];
+                }
+                else if (tokens[0] == "map_Kd" && currentMaterial != null)
+                {
+                    // Map_Kd can contain full paths, we usually just want the filename
+                    string texName = Path.GetFileName(tokens[1]);
+                    result[currentMaterial] = texName;
+                }
+            }
+            return result;
         }
 
         private void ProcessVertexToken(
@@ -99,7 +165,6 @@ namespace ForzaTools.ForzaAnalyzer.Services
         {
             var parts = token.Split('/');
 
-            // Parse OBJ indices (1-based, handle negative/missing)
             int vIdx = ParseIndex(parts[0], rPos.Count);
             int vtIdx = (parts.Length > 1 && parts[1].Length > 0) ? ParseIndex(parts[1], rUV.Count) : 0;
             int vnIdx = (parts.Length > 2 && parts[2].Length > 0) ? ParseIndex(parts[2], rNorm.Count) : 0;
@@ -112,10 +177,8 @@ namespace ForzaTools.ForzaAnalyzer.Services
             }
             else
             {
-                // Create new unified vertex
                 int newIndex = fPos.Count;
 
-                // Get Data (Adjust for 1-based index)
                 fPos.Add(vIdx > 0 && vIdx <= rPos.Count ? rPos[vIdx - 1] : Vector3.Zero);
                 fUV.Add(vtIdx > 0 && vtIdx <= rUV.Count ? rUV[vtIdx - 1] : Vector2.Zero);
                 fNorm.Add(vnIdx > 0 && vnIdx <= rNorm.Count ? rNorm[vnIdx - 1] : Vector3.UnitY);
@@ -129,8 +192,8 @@ namespace ForzaTools.ForzaAnalyzer.Services
         {
             if (int.TryParse(s, out int i))
             {
-                if (i < 0) return count + i + 1; // Relative
-                return i; // Absolute
+                if (i < 0) return count + i + 1;
+                return i;
             }
             return 0;
         }
