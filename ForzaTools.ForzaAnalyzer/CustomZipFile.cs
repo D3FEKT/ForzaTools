@@ -1,9 +1,9 @@
-﻿using System;
+﻿using Syroot.BinaryData;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
-using Syroot.BinaryData;
 
 namespace ForzaTools.ForzaAnalyzer
 {
@@ -130,36 +130,53 @@ namespace ForzaTools.ForzaAnalyzer
             // Skip variable header parts
             _bs.Position += nameLen + extraLen;
 
-            // --- DECOMPRESSION LOGIC ---
-
-            if (method == 0) // Store (No Compression)
+            if (method == 0) // Store
             {
-                // Copy directly from source stream to output stream
                 CopyStream(_stream, outputStream, (int)compressedSize);
             }
             else if (method == 8) // Deflate
             {
-                // We read the compressed chunk into memory. 
-                // (For 10MB zip, compressed chunks are small enough. Streaming this part is complex without a wrapper).
                 byte[] compressedData = _bs.ReadBytes((int)compressedSize);
-
                 using (var ms = new MemoryStream(compressedData))
                 using (var ds = new DeflateStream(ms, CompressionMode.Decompress))
                 {
-                    ds.CopyTo(outputStream); // Stream result directly to disk
+                    ds.CopyTo(outputStream);
                 }
             }
-            else if (method == 21) // LZX (Forza)
+            else if (method == 21) // LZX (Forza / XMemCompress)
             {
-                // LZX API requires byte arrays, so we must buffer this.
-                // Sanity check for uncompressed size to prevent OOM
-                if (uncompressedSize > 500 * 1024 * 1024) // 500MB limit per file
-                    throw new InvalidDataException($"File {fileName} is too large for LZX decompression ({uncompressedSize} bytes).");
-
+                // Read compressed data into memory
                 byte[] compressedData = _bs.ReadBytes((int)compressedSize);
-                byte[] decompressed = XMemCompress.Decompress(compressedData, (int)uncompressedSize);
 
-                outputStream.Write(decompressed, 0, decompressed.Length);
+                using (var ms = new MemoryStream(compressedData))
+                {
+                    // --- HEADER FIX START ---
+                    // Check for XMemCompress Magic (0x0FF512ED)
+                    // Struct is roughly 48 bytes for XCOMPRESS_FILE_HEADER_LZXNATIVE
+                    if (compressedData.Length > 4)
+                    {
+                        // Peek first 4 bytes
+                        uint magic = BitConverter.ToUInt32(compressedData, 0);
+                        if (magic == 0x0FF512ED)
+                        {
+                            // Found XMemCompress header. Skip it to get to raw LZX stream.
+                            // The native header size is typically 48 bytes (0x30).
+                            // If this fails, try skipping just 8 bytes.
+                            ms.Seek(48, SeekOrigin.Begin);
+                        }
+                    }
+                    // --- HEADER FIX END ---
+
+                    // Use 16 bits (64KB) for Forza LZX. 
+                    // DO NOT use '65536' here, as MonoGame expects the bit count.
+                    var decoder = new LzxDecoder(16);
+
+                    // Decompress
+                    // Parameters: Input Stream, Input Length, Output Stream, Output Length
+                    // Note: inputLength should be the remaining length of the stream, not full compressedSize if we skipped header
+                    long inputLen = ms.Length - ms.Position;
+                    decoder.Decompress(ms, (int)inputLen, outputStream, (int)uncompressedSize);
+                }
             }
             else
             {

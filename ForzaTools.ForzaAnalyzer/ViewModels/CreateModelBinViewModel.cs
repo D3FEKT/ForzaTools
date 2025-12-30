@@ -18,7 +18,7 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
     public partial class GroupViewModel : ObservableObject
     {
         public string Name { get; set; }
-        public string TextureName { get; set; } // Displayed in UI
+        public string TextureName { get; set; }
         public ObjGroup SourceGroup { get; set; }
 
         [ObservableProperty]
@@ -46,13 +46,22 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         private ObjSceneData _rawScene;
 
         [ObservableProperty] private string _statusMessage = "Select an OBJ file to begin.";
-        [ObservableProperty] private string _mtlStatusMessage = ""; // Info about loaded .mtl
+        [ObservableProperty] private string _mtlStatusMessage = "";
         [ObservableProperty] private string _inputFilePath;
         [ObservableProperty][NotifyPropertyChangedFor(nameof(IsNotBusy))] private bool _isBusy;
         public bool IsNotBusy => !IsBusy;
         [ObservableProperty] private bool _isFileSelected;
 
-        // --- Live Edit Properties (Memory Only) ---
+        // --- Axis Selection (Import Settings) ---
+        public ObservableCollection<string> AxisOptions { get; } =
+        [
+            "+X", "-X", "+Y", "-Y", "+Z", "-Z"
+        ];
+
+        [ObservableProperty] private string _selectedForwardAxis = "-Z";
+        [ObservableProperty] private string _selectedUpAxis = "+Y";
+
+        // --- Live Edit Properties ---
         [ObservableProperty] private bool _isOpaque = true;
         [ObservableProperty] private bool _isDecal;
         [ObservableProperty] private bool _isTransparent;
@@ -69,18 +78,29 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
         [ObservableProperty] private float _scaleY = 1f;
         [ObservableProperty] private float _scaleZ = 1f;
 
-        // --- Geometry Modifiers ---
+        // --- Rotation ---
         [ObservableProperty] private float _rotationPitch;
         [ObservableProperty] private float _rotationYaw;
         [ObservableProperty] private float _rotationRoll;
-        [ObservableProperty] private bool _isMirrorEnabled;
-        [ObservableProperty] private bool _flipX_Pos;
-        [ObservableProperty] private bool _flipY_Pos;
-        [ObservableProperty] private bool _flipZ_Pos;
-        [ObservableProperty] private bool _flipX_Norm;
-        [ObservableProperty] private bool _flipY_Norm;
-        [ObservableProperty] private bool _flipZ_Norm;
+
+        // --- Vertex Flip Options ---
+        [ObservableProperty] private bool _flipVertexX;
+        [ObservableProperty] private bool _flipVertexY;
+        [ObservableProperty] private bool _flipVertexZ;
+
+        // --- Normal Flip Options ---
+        [ObservableProperty] private bool _flipNormalX;
+        [ObservableProperty] private bool _flipNormalY;
+        [ObservableProperty] private bool _flipNormalZ;
+
+        // --- Face Winding ---
         [ObservableProperty] private bool _flipFaces;
+
+        // --- Mirror ---
+        [ObservableProperty] private bool _isMirrorEnabled;
+
+        // --- Recalculate Normals ---
+        [ObservableProperty] private bool _recalculateNormals;
 
         // --- Material & Groups ---
         public ObservableCollection<string> Materials { get; } = new ObservableCollection<string>();
@@ -88,23 +108,36 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
         public ObservableCollection<GroupViewModel> ModelGroups { get; } = new ObservableCollection<GroupViewModel>();
 
+        [ObservableProperty]
+        private string _selectAllButtonText = "Deselect All";
+
         public CreateModelBinViewModel()
         {
             LoadMaterials();
         }
 
+        // --- Axis Conversion Helper ---
+        private CoordinateAxis ParseAxisString(string axis) => axis switch
+        {
+            "+X" => CoordinateAxis.PositiveX,
+            "-X" => CoordinateAxis.NegativeX,
+            "+Y" => CoordinateAxis.PositiveY,
+            "-Y" => CoordinateAxis.NegativeY,
+            "+Z" => CoordinateAxis.PositiveZ,
+            "-Z" => CoordinateAxis.NegativeZ,
+            _ => CoordinateAxis.PositiveY
+        };
+
         // --- Change Handlers ---
-        partial void OnRotationPitchChanged(float value) => RebuildBundle();
-        partial void OnRotationYawChanged(float value) => RebuildBundle();
-        partial void OnRotationRollChanged(float value) => RebuildBundle();
-        partial void OnIsMirrorEnabledChanged(bool value) => RebuildBundle();
-        partial void OnFlipX_PosChanged(bool value) => RebuildBundle();
-        partial void OnFlipY_PosChanged(bool value) => RebuildBundle();
-        partial void OnFlipZ_PosChanged(bool value) => RebuildBundle();
-        partial void OnFlipX_NormChanged(bool value) => RebuildBundle();
-        partial void OnFlipY_NormChanged(bool value) => RebuildBundle();
-        partial void OnFlipZ_NormChanged(bool value) => RebuildBundle();
+        partial void OnFlipVertexXChanged(bool value) => RebuildBundle();
+        partial void OnFlipVertexYChanged(bool value) => RebuildBundle();
+        partial void OnFlipVertexZChanged(bool value) => RebuildBundle();
+        partial void OnFlipNormalXChanged(bool value) => RebuildBundle();
+        partial void OnFlipNormalYChanged(bool value) => RebuildBundle();
+        partial void OnFlipNormalZChanged(bool value) => RebuildBundle();
         partial void OnFlipFacesChanged(bool value) => RebuildBundle();
+        partial void OnIsMirrorEnabledChanged(bool value) => RebuildBundle();
+        partial void OnRecalculateNormalsChanged(bool value) => RebuildBundle();
 
         partial void OnPosXChanged(float value) => UpdateTransformInMemory();
         partial void OnPosYChanged(float value) => UpdateTransformInMemory();
@@ -166,6 +199,28 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             }
         }
 
+        private void UpdateSelectAllButtonText()
+        {
+            bool allSelected = ModelGroups.Count > 0 && ModelGroups.All(g => g.IsSelected);
+            SelectAllButtonText = allSelected ? "Deselect All" : "Select All";
+        }
+
+        [RelayCommand]
+        private void ToggleSelectAllGroups()
+        {
+            if (ModelGroups.Count == 0) return;
+
+            bool allSelected = ModelGroups.All(g => g.IsSelected);
+            bool newState = !allSelected;
+
+            foreach (var group in ModelGroups)
+            {
+                group.IsSelected = newState;
+            }
+
+            UpdateSelectAllButtonText();
+        }
+
         [RelayCommand]
         public async Task PickInputFileAsync()
         {
@@ -194,14 +249,17 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
             try
             {
-                // 1. Parse OBJ
-                _rawScene = await Task.Run(() => _parserService.ParseObj(InputFilePath));
+                var importSettings = new ObjImportSettings
+                {
+                    ForwardAxis = ParseAxisString(SelectedForwardAxis),
+                    UpAxis = ParseAxisString(SelectedUpAxis)
+                };
 
-                // 2. Locate and Parse MTL
+                _rawScene = await Task.Run(() => _parserService.ParseObj(InputFilePath, importSettings));
+
                 Dictionary<string, string> matTextures = new Dictionary<string, string>();
                 string mtlPath = null;
 
-                // Try path from OBJ (mtllib)
                 if (!string.IsNullOrEmpty(_rawScene.MaterialLib))
                 {
                     string dir = Path.GetDirectoryName(InputFilePath);
@@ -209,7 +267,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                     if (File.Exists(checkPath)) mtlPath = checkPath;
                 }
 
-                // Fallback: Same name as OBJ
                 if (mtlPath == null)
                 {
                     string sameNameMtl = Path.ChangeExtension(InputFilePath, ".mtl");
@@ -226,7 +283,6 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                     MtlStatusMessage = "No associated MTL file found.";
                 }
 
-                // 3. Populate Groups with Texture Info
                 ModelGroups.Clear();
                 foreach (var g in _rawScene.Groups)
                 {
@@ -237,7 +293,11 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
                         {
                             tex = matTextures[g.MaterialName];
                         }
-                        ModelGroups.Add(new GroupViewModel(g, tex, () => RebuildBundle()));
+                        ModelGroups.Add(new GroupViewModel(g, tex, () => 
+                        {
+                            RebuildBundle();
+                            UpdateSelectAllButtonText();
+                        }));
                     }
                 }
 
@@ -277,18 +337,97 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
 
                     if (selectedIndices.Length == 0) return;
 
-                    var positions = (Vector3[])_rawScene.Positions.Clone();
-                    var normals = (Vector3[])_rawScene.Normals.Clone();
+                    // --- FIX: Remap vertices to only include those used by selected indices ---
+                    var usedVertexIndices = selectedIndices.Distinct().OrderBy(i => i).ToList();
+                    var oldToNewIndexMap = new Dictionary<int, int>();
+                    for (int i = 0; i < usedVertexIndices.Count; i++)
+                    {
+                        oldToNewIndexMap[usedVertexIndices[i]] = i;
+                    }
 
-                    ApplyGeometryModifiers(positions, normals, ref selectedIndices);
+                    // Create compacted vertex arrays with only used vertices
+                    var compactedPositions = new Vector3[usedVertexIndices.Count];
+                    var compactedNormals = new Vector3[usedVertexIndices.Count];
+                    var compactedUVs = new Vector2[usedVertexIndices.Count];
+                    var compactedTangents = new Vector4[usedVertexIndices.Count];
+
+                    for (int i = 0; i < usedVertexIndices.Count; i++)
+                    {
+                        int oldIdx = usedVertexIndices[i];
+                        compactedPositions[i] = _rawScene.Positions[oldIdx];
+                        compactedNormals[i] = oldIdx < _rawScene.Normals.Length ? _rawScene.Normals[oldIdx] : Vector3.UnitY;
+                        compactedUVs[i] = oldIdx < _rawScene.UVs.Length ? _rawScene.UVs[oldIdx] : Vector2.Zero;
+                        compactedTangents[i] = oldIdx < _rawScene.Tangents.Length ? _rawScene.Tangents[oldIdx] : new Vector4(1, 0, 0, 1);
+                    }
+
+                    // Remap indices to reference the compacted arrays
+                    var remappedIndices = selectedIndices.Select(i => oldToNewIndexMap[i]).ToArray();
+
+                    // --- 1. Apply Vertex Modifiers (Position & Tangents) ---
+                    if (FlipVertexX) FlipVector3Array(compactedPositions, true, false, false);
+                    if (FlipVertexY) FlipVector3Array(compactedPositions, false, true, false);
+                    if (FlipVertexZ) FlipVector3Array(compactedPositions, false, false, true);
+
+                    // Tangents must flip with geometry
+                    if (FlipVertexX) FlipVector4Array(compactedTangents, true, false, false);
+                    if (FlipVertexY) FlipVector4Array(compactedTangents, false, true, false);
+                    if (FlipVertexZ) FlipVector4Array(compactedTangents, false, false, true);
+
+                    if (IsMirrorEnabled)
+                    {
+                        FlipVector3Array(compactedPositions, true, false, false); // Mirror X
+                        FlipVector4Array(compactedTangents, true, false, false); // Mirror Tangent X
+                        
+                        // Mirroring inverts the coordinate system, so we must flip tangent handedness (W)
+                        for (int i = 0; i < compactedTangents.Length; i++) compactedTangents[i].W *= -1;
+                    }
+
+                    // --- 2. Apply Index Modifiers (Winding) ---
+                    // Mirroring requires flipping winding to maintain surface orientation
+                    bool shouldFlipWinding = FlipFaces;
+                    if (IsMirrorEnabled) shouldFlipWinding = !shouldFlipWinding;
+
+                    if (shouldFlipWinding)
+                    {
+                        FlipFaceWinding(remappedIndices);
+                    }
+
+                    // --- 3. Handle Normals ---
+                    Vector3[] finalNormals;
+
+                    if (RecalculateNormals)
+                    {
+                        // Calculate normals based on the FINAL geometry (positions and winding)
+                        // This ensures normals point in the correct direction relative to the surface
+                        finalNormals = RecalculateMeshNormals(compactedPositions, remappedIndices);
+                    }
+                    else
+                    {
+                        finalNormals = compactedNormals;
+
+                        // Apply modifiers to existing normals
+                        if (FlipNormalX) FlipVector3Array(finalNormals, true, false, false);
+                        if (FlipNormalY) FlipVector3Array(finalNormals, false, true, false);
+                        if (FlipNormalZ) FlipVector3Array(finalNormals, false, false, true);
+
+                        if (IsMirrorEnabled)
+                        {
+                            FlipVector3Array(finalNormals, true, false, false); // Mirror Normal X
+                        }
+                        
+                        // Re-normalize to be safe
+                        for(int i=0; i<finalNormals.Length; i++) 
+                            finalNormals[i] = Vector3.Normalize(finalNormals[i]);
+                    }
 
                     var geometryInput = new GeometryInput
                     {
                         Name = _rawScene.Name,
-                        Positions = positions,
-                        Normals = normals,
-                        UVs = _rawScene.UVs,
-                        Indices = selectedIndices
+                        Positions = compactedPositions,
+                        Normals = finalNormals,
+                        UVs = compactedUVs,
+                        Indices = remappedIndices,
+                        Tangents = compactedTangents // Pass tangents to builder
                     };
 
                     var processed = _builderService.ProcessGeometry(geometryInput);
@@ -330,61 +469,79 @@ namespace ForzaTools.ForzaAnalyzer.ViewModels
             }
         }
 
-        private void ApplyGeometryModifiers(Vector3[] pos, Vector3[] norm, ref int[] indices)
+        private Vector3[] RecalculateMeshNormals(Vector3[] positions, int[] indices)
         {
-            if (IsMirrorEnabled)
+            Vector3[] newNormals = new Vector3[positions.Length];
+
+            for (int i = 0; i < indices.Length; i += 3)
             {
-                for (int i = 0; i < pos.Length; i++)
+                int i1 = indices[i];
+                int i2 = indices[i + 1];
+                int i3 = indices[i + 2];
+
+                if (i1 >= positions.Length || i2 >= positions.Length || i3 >= positions.Length) continue;
+
+                Vector3 v1 = positions[i1];
+                Vector3 v2 = positions[i2];
+                Vector3 v3 = positions[i3];
+
+                Vector3 edge1 = v2 - v1;
+                Vector3 edge2 = v3 - v1;
+                Vector3 faceNormal = Vector3.Cross(edge1, edge2);
+
+                newNormals[i1] += faceNormal;
+                newNormals[i2] += faceNormal;
+                newNormals[i3] += faceNormal;
+            }
+
+            for (int i = 0; i < newNormals.Length; i++)
+            {
+                if (newNormals[i].LengthSquared() > 0.000001f)
                 {
-                    pos[i].X *= -1;
-                    norm[i].X *= -1;
+                    newNormals[i] = Vector3.Normalize(newNormals[i]);
                 }
-                for (int i = 0; i < indices.Length; i += 3)
+                else
                 {
-                    int temp = indices[i + 1];
-                    indices[i + 1] = indices[i + 2];
-                    indices[i + 2] = temp;
+                    newNormals[i] = Vector3.UnitY;
                 }
             }
 
-            if (RotationPitch != 0 || RotationYaw != 0 || RotationRoll != 0)
-            {
-                float p = RotationPitch * (MathF.PI / 180f);
-                float y = RotationYaw * (MathF.PI / 180f);
-                float r = RotationRoll * (MathF.PI / 180f);
-                var rotMatrix = Matrix4x4.CreateFromYawPitchRoll(y, p, r);
+            return newNormals;
+        }
 
-                for (int i = 0; i < pos.Length; i++)
-                {
-                    pos[i] = Vector3.Transform(pos[i], rotMatrix);
-                    norm[i] = Vector3.TransformNormal(norm[i], rotMatrix);
-                }
+        private void FlipVector3Array(Vector3[] arr, bool x, bool y, bool z)
+        {
+            if (!x && !y && !z) return;
+            for (int i = 0; i < arr.Length; i++)
+            {
+                var v = arr[i];
+                if (x) v.X = -v.X;
+                if (y) v.Y = -v.Y;
+                if (z) v.Z = -v.Z;
+                arr[i] = v;
             }
+        }
 
-            bool fx = FlipX_Pos, fy = FlipY_Pos, fz = FlipZ_Pos;
-            bool nx = FlipX_Norm, ny = FlipY_Norm, nz = FlipZ_Norm;
-
-            if (fx || fy || fz || nx || ny || nz)
+        private void FlipVector4Array(Vector4[] arr, bool x, bool y, bool z)
+        {
+            if (!x && !y && !z) return;
+            for (int i = 0; i < arr.Length; i++)
             {
-                for (int i = 0; i < pos.Length; i++)
-                {
-                    if (fx) pos[i].X *= -1;
-                    if (fy) pos[i].Y *= -1;
-                    if (fz) pos[i].Z *= -1;
-
-                    if (nx) norm[i].X *= -1;
-                    if (ny) norm[i].Y *= -1;
-                    if (nz) norm[i].Z *= -1;
-                }
+                var v = arr[i];
+                if (x) v.X = -v.X;
+                if (y) v.Y = -v.Y;
+                if (z) v.Z = -v.Z;
+                arr[i] = v;
             }
+        }
 
-            if (FlipFaces)
+        private void FlipFaceWinding(int[] indices)
+        {
+            for (int i = 0; i < indices.Length; i += 3)
             {
-                for (int i = 0; i < indices.Length; i += 3)
+                if (i + 2 < indices.Length)
                 {
-                    int temp = indices[i + 1];
-                    indices[i + 1] = indices[i + 2];
-                    indices[i + 2] = temp;
+                    (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
                 }
             }
         }

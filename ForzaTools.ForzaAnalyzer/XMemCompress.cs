@@ -5,25 +5,47 @@ namespace ForzaTools.ForzaAnalyzer
 {
     public static class XMemCompress
     {
-        // Removed P/Invokes to xcompress.dll to support 64-bit
+        // Standard XMemCompress window size is 64KB.
+        // The LzxDecoder expects "window bits", so 2^16 = 65536 bytes.
+        private const int LZX_WINDOW_BITS = 16;
 
+        /// <summary>
+        /// Decompresses data using the pure C# LzxDecoder instead of xcompress.dll
+        /// </summary>
         public static byte[] Decompress(byte[] compressedData, int uncompressedSize)
         {
             try
             {
-                // Use Managed C# LZX Decoder
-                var decoder = new LzxDecoder(65536); // Standard 64KB window for Forza
-                byte[] decompressedBuffer = new byte[uncompressedSize];
+                // Wrap the byte arrays in Streams as required by the new LzxDecoder
+                using (var input = new MemoryStream(compressedData))
+                using (var output = new MemoryStream(uncompressedSize))
+                {
+                    // Initialize the decoder with 16 bits (64KB window)
+                    var decoder = new LzxDecoder(LZX_WINDOW_BITS);
 
-                // Note: If the stub LzxDecoder above is insufficient, 
-                // you might see zeros. Integrating a full open-source LZX file is recommended.
-                decoder.Decompress(compressedData, uncompressedSize, decompressedBuffer);
+                    // Perform decompression
+                    // Signature: Decompress(Stream inData, int inLen, Stream outData, int outLen)
+                    int result = decoder.Decompress(input, compressedData.Length, output, uncompressedSize);
 
-                return decompressedBuffer;
+                    // The LzxDecoder returns 0 on success, non-zero on failure
+                    if (result != 0)
+                    {
+                        throw new Exception($"LZX Decompression failed with error code: {result}");
+                    }
+
+                    // Verification check similar to the original code
+                    if (output.Length != uncompressedSize)
+                    {
+                        throw new InvalidDataException($"Decompression size mismatch. Expected {uncompressedSize}, got {output.Length}.");
+                    }
+
+                    return output.ToArray();
+                }
             }
             catch (Exception ex)
             {
-                throw new Exception($"Managed LZX Decompression failed: {ex.Message}");
+                // Preserve the error context for debugging
+                throw new Exception($"Managed LZX Decompression failed: {ex.Message}", ex);
             }
         }
     }

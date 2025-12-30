@@ -118,6 +118,8 @@ namespace ForzaTools.ForzaAnalyzer.Views
             ViewportContainer.Children.Add(_viewport);
         }
 
+        private Dictionary<ForzaMeshViewModel, LineGeometryModel3D> _normalRenderMap = new();
+
         private async void FileList_ItemClick(object sender, ItemClickEventArgs e)
         {
             if (e.ClickedItem is not FileViewModel fileVm) return;
@@ -170,6 +172,9 @@ namespace ForzaTools.ForzaAnalyzer.Views
                         var data = result.Meshes[i];
                         var mesh3d = CreateMesh3D(data);
                         _modelGroup.Children.Add(mesh3d);
+                        var normals3d = CreateNormalVisualizer(data);
+                        normals3d.IsRendering = false; // Hidden by default
+                        _modelGroup.Children.Add(normals3d);
 
                         var meshVm = new ForzaMeshViewModel
                         {
@@ -180,6 +185,7 @@ namespace ForzaTools.ForzaAnalyzer.Views
                         };
 
                         _meshRenderMap[meshVm] = mesh3d;
+                        _normalRenderMap[meshVm] = normals3d;
                         meshVm.PropertyChanged += MeshVm_PropertyChanged;
                         Meshes.Add(meshVm);
 
@@ -223,6 +229,15 @@ namespace ForzaTools.ForzaAnalyzer.Views
             {
                 System.Diagnostics.Debug.WriteLine($"Viewer Load Error: {ex}");
                 IsLoading = false;
+            }
+        }
+
+        private void ShowNormals_Checked(object sender, RoutedEventArgs e)
+        {
+            bool show = (sender as CheckBox)?.IsChecked ?? false;
+            foreach (var lineModel in _normalRenderMap.Values)
+            {
+                lineModel.IsRendering = show;
             }
         }
 
@@ -327,6 +342,32 @@ namespace ForzaTools.ForzaAnalyzer.Views
                     geometry.UpdateBounds();
                 }
             }
+        }
+
+        private LineGeometryModel3D CreateNormalVisualizer(ForzaGeometryData data, float lineLength = 0.5f)
+        {
+            var builder = new LineBuilder();
+
+            for (int i = 0; i < data.Positions.Length; i++)
+            {
+                var pos = new SDX.Vector3(data.Positions[i].X, data.Positions[i].Y, data.Positions[i].Z);
+
+                // Safety check for normals
+                if (data.Normals == null || i >= data.Normals.Length) continue;
+
+                var normal = new SDX.Vector3(data.Normals[i].X, data.Normals[i].Y, data.Normals[i].Z);
+
+                // Draw line from Vertex -> Vertex + (Normal * Length)
+                builder.AddLine(pos, pos + (normal * lineLength));
+            }
+
+            return new LineGeometryModel3D
+            {
+                Geometry = builder.ToLineGeometry3D(),
+                Color = Microsoft.UI.Colors.Yellow, // Yellow lines for visibility
+                Thickness = 1.0,
+                IsHitTestVisible = false // Don't block clicks
+            };
         }
     }
 }

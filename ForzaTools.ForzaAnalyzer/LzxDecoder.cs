@@ -1,357 +1,740 @@
 ﻿using System;
-using System.IO;
+using System.Diagnostics;
 
 namespace ForzaTools.ForzaAnalyzer
 {
-    /// <summary>
-    /// Managed C# implementation of LZX Decompression (compatible with XMem).
-    /// </summary>
-    public class LzxDecoder
+    using System.IO;
+
+    class LzxDecoder
     {
-        private const int MIN_MATCH = 2;
-        private const int MAX_MATCH = 257;
-        private const int NUM_CHARS = 256;
-        private const int NUM_POSITION_SLOTS = 30; // 30-50 depending on window size, 30 covers up to 2MB
+        public static uint[] position_base = null;
+        public static byte[] extra_bits = null;
 
-        private readonly int _windowSize;
-        private readonly byte[] _window;
-        private int _windowPos;
+        private LzxState m_state;
 
-        // Huffman Tables
-        private readonly ushort[] _mainTreeLen = new ushort[NUM_CHARS + NUM_POSITION_SLOTS * 8];
-        private readonly ushort[] _mainTreeTable = new ushort[(1 << 16)]; // 16-bit max code length
-        private readonly ushort[] _lengthTreeLen = new ushort[249 + NUM_CHARS]; // Simplified
-        private readonly ushort[] _lengthTreeTable = new ushort[(1 << 16)];
-        private readonly ushort[] _alignedTreeLen = new ushort[8];
-        private readonly ushort[] _alignedTreeTable = new ushort[(1 << 16)];
-
-        // State
-        private uint _r0, _r1, _r2;
-        private int _headerReadCount;
-        private int _intelFileSize;
-
-        public LzxDecoder(int windowSize)
+        public LzxDecoder(int window)
         {
-            _windowSize = windowSize;
-            _window = new byte[windowSize];
-            _windowPos = 0;
-            _r0 = 1; _r1 = 1; _r2 = 1;
+            uint wndsize = (uint)(1 << window);
+            int posn_slots;
+
+            // setup proper exception
+            if (window < 15 || window > 21) throw new UnsupportedWindowSizeRange();
+
+            // let's initialise our state
+            m_state = new LzxState();
+            m_state.actual_size = 0;
+            m_state.window = new byte[wndsize];
+            for (int i = 0; i < wndsize; i++) m_state.window[i] = 0xDC;
+            m_state.actual_size = wndsize;
+            m_state.window_size = wndsize;
+            m_state.window_posn = 0;
+
+            /* initialize static tables */
+            if (extra_bits == null)
+            {
+                extra_bits = new byte[52];
+                for (int i = 0, j = 0; i <= 50; i += 2)
+                {
+                    extra_bits[i] = extra_bits[i + 1] = (byte)j;
+                    if ((i != 0) && (j < 17)) j++;
+                }
+            }
+            if (position_base == null)
+            {
+                position_base = new uint[51];
+                for (int i = 0, j = 0; i <= 50; i++)
+                {
+                    position_base[i] = (uint)j;
+                    j += 1 << extra_bits[i];
+                }
+            }
+
+            /* calculate required position slots */
+            if (window == 20) posn_slots = 42;
+            else if (window == 21) posn_slots = 50;
+            else posn_slots = window << 1;
+
+            m_state.R0 = m_state.R1 = m_state.R2 = 1;
+            m_state.main_elements = (ushort)(LzxConstants.NUM_CHARS + (posn_slots << 3));
+            m_state.header_read = 0;
+            m_state.frames_read = 0;
+            m_state.block_remaining = 0;
+            m_state.block_type = LzxConstants.BLOCKTYPE.INVALID;
+            m_state.intel_curpos = 0;
+            m_state.intel_started = 0;
+
+            // yo dawg i herd u liek arrays so we put arrays in ur arrays so u can array while u array
+            m_state.PRETREE_table = new ushort[(1 << LzxConstants.PRETREE_TABLEBITS) + (LzxConstants.PRETREE_MAXSYMBOLS << 1)];
+            m_state.PRETREE_len = new byte[LzxConstants.PRETREE_MAXSYMBOLS + LzxConstants.LENTABLE_SAFETY];
+            m_state.MAINTREE_table = new ushort[(1 << LzxConstants.MAINTREE_TABLEBITS) + (LzxConstants.MAINTREE_MAXSYMBOLS << 1)];
+            m_state.MAINTREE_len = new byte[LzxConstants.MAINTREE_MAXSYMBOLS + LzxConstants.LENTABLE_SAFETY];
+            m_state.LENGTH_table = new ushort[(1 << LzxConstants.LENGTH_TABLEBITS) + (LzxConstants.LENGTH_MAXSYMBOLS << 1)];
+            m_state.LENGTH_len = new byte[LzxConstants.LENGTH_MAXSYMBOLS + LzxConstants.LENTABLE_SAFETY];
+            m_state.ALIGNED_table = new ushort[(1 << LzxConstants.ALIGNED_TABLEBITS) + (LzxConstants.ALIGNED_MAXSYMBOLS << 1)];
+            m_state.ALIGNED_len = new byte[LzxConstants.ALIGNED_MAXSYMBOLS + LzxConstants.LENTABLE_SAFETY];
+            /* initialise tables to 0 (because deltas will be applied to them) */
+            for (int i = 0; i < LzxConstants.MAINTREE_MAXSYMBOLS; i++) m_state.MAINTREE_len[i] = 0;
+            for (int i = 0; i < LzxConstants.LENGTH_MAXSYMBOLS; i++) m_state.LENGTH_len[i] = 0;
         }
 
-        public int Decompress(byte[] input, int outputSize, byte[] output)
+        public int Decompress(Stream inData, int inLen, Stream outData, int outLen)
         {
-            Reset();
+            BitBuffer bitbuf = new BitBuffer(inData);
+            long startpos = inData.Position;
+            long endpos = inData.Position + inLen;
 
-            using var ms = new MemoryStream(input);
-            var bitStream = new LzxBitStream(ms);
+            byte[] window = m_state.window;
 
-            int totalWritten = 0;
+            uint window_posn = m_state.window_posn;
+            uint window_size = m_state.window_size;
+            uint R0 = m_state.R0;
+            uint R1 = m_state.R1;
+            uint R2 = m_state.R2;
+            uint i, j;
 
-            // XMem LZX often skips the E8 translation init or uses defaults. 
-            // We assume standard XMem block parsing.
+            int togo = outLen, this_run, main_element, match_length, match_offset, length_footer, extra, verbatim_bits;
+            int rundest, runsrc, copy_length, aligned_bits;
 
-            while (totalWritten < outputSize)
+            bitbuf.InitBitStream();
+
+            /* read header if necessary */
+            if (m_state.header_read == 0)
             {
-                int blockType = bitStream.ReadBits(3);
-
-                int blockSize = bitStream.ReadBits(24);
-                int blockEnd = totalWritten + blockSize;
-
-                if (blockType == 1) // Verbatim
+                uint intel = bitbuf.ReadBits(1);
+                if (intel != 0)
                 {
-                    ReadHuffmanTree(bitStream, _mainTreeLen, 0, 256, _mainTreeTable);
-                    ReadHuffmanTree(bitStream, _mainTreeLen, 256, NUM_POSITION_SLOTS * 8, _mainTreeTable);
-                    ReadHuffmanTree(bitStream, _lengthTreeLen, 0, 249, _lengthTreeTable);
+                    // read the filesize
+                    i = bitbuf.ReadBits(16); j = bitbuf.ReadBits(16);
+                    m_state.intel_filesize = (int)((i << 16) | j);
                 }
-                else if (blockType == 2) // Aligned
+                m_state.header_read = 1;
+            }
+
+            /* main decoding loop */
+            while (togo > 0)
+            {
+                /* last block finished, new block expected */
+                if (m_state.block_remaining == 0)
                 {
-                    ReadHuffmanTree(bitStream, _alignedTreeLen, 0, 8, _alignedTreeTable);
-                    ReadHuffmanTree(bitStream, _mainTreeLen, 0, 256, _mainTreeTable);
-                    ReadHuffmanTree(bitStream, _mainTreeLen, 256, NUM_POSITION_SLOTS * 8, _mainTreeTable);
-                    ReadHuffmanTree(bitStream, _lengthTreeLen, 0, 249, _lengthTreeTable);
-                }
-                else if (blockType == 3) // Uncompressed
-                {
-                    // Align bits
-                    bitStream.EnsureBits(16); // Force re-align if needed logic could go here, usually just:
-                    if (bitStream.BitBufferCount > 0)
+                    // TODO may screw something up here
+                    if (m_state.block_type == LzxConstants.BLOCKTYPE.UNCOMPRESSED)
                     {
-                        // LZX uncompressed blocks enforce 16-bit alignment relative to stream start? 
-                        // XMem usually just pads to next byte.
-                        // For simplicity in this tailored implementation:
-                        // bitStream.AlignToByte(); // If needed
+                        if ((m_state.block_length & 1) == 1) inData.ReadByte(); /* realign bitstream to word */
+                        bitbuf.InitBitStream();
                     }
 
-                    // 12 bytes of R0, R1, R2
-                    _r0 = bitStream.ReadUInt32();
-                    _r1 = bitStream.ReadUInt32();
-                    _r2 = bitStream.ReadUInt32();
+                    m_state.block_type = (LzxConstants.BLOCKTYPE)bitbuf.ReadBits(3); ;
+                    i = bitbuf.ReadBits(16);
+                    j = bitbuf.ReadBits(8);
+                    m_state.block_remaining = m_state.block_length = (uint)((i << 8) | j);
 
-                    int padding = blockSize; // Remaining bytes are raw
-                    while (padding > 0 && totalWritten < outputSize)
+                    switch (m_state.block_type)
                     {
-                        byte b = (byte)bitStream.ReadBits(8);
-                        output[totalWritten++] = b;
-                        _window[_windowPos++] = b;
-                        if (_windowPos == _windowSize) _windowPos = 0;
-                        padding--;
+                        case LzxConstants.BLOCKTYPE.ALIGNED:
+                            for (i = 0, j = 0; i < 8; i++) { j = bitbuf.ReadBits(3); m_state.ALIGNED_len[i] = (byte)j; }
+                            MakeDecodeTable(LzxConstants.ALIGNED_MAXSYMBOLS, LzxConstants.ALIGNED_TABLEBITS,
+                                            m_state.ALIGNED_len, m_state.ALIGNED_table);
+                            /* rest of aligned header is same as verbatim */
+                            goto case LzxConstants.BLOCKTYPE.VERBATIM;
+
+                        case LzxConstants.BLOCKTYPE.VERBATIM:
+                            ReadLengths(m_state.MAINTREE_len, 0, 256, bitbuf);
+                            ReadLengths(m_state.MAINTREE_len, 256, m_state.main_elements, bitbuf);
+                            MakeDecodeTable(LzxConstants.MAINTREE_MAXSYMBOLS, LzxConstants.MAINTREE_TABLEBITS,
+                                            m_state.MAINTREE_len, m_state.MAINTREE_table);
+                            if (m_state.MAINTREE_len[0xE8] != 0) m_state.intel_started = 1;
+
+                            ReadLengths(m_state.LENGTH_len, 0, LzxConstants.NUM_SECONDARY_LENGTHS, bitbuf);
+                            MakeDecodeTable(LzxConstants.LENGTH_MAXSYMBOLS, LzxConstants.LENGTH_TABLEBITS,
+                                            m_state.LENGTH_len, m_state.LENGTH_table);
+                            break;
+
+                        case LzxConstants.BLOCKTYPE.UNCOMPRESSED:
+                            m_state.intel_started = 1; /* because we can't assume otherwise */
+                            bitbuf.EnsureBits(16); /* get up to 16 pad bits into the buffer */
+                            if (bitbuf.GetBitsLeft() > 16) inData.Seek(-2, SeekOrigin.Current); /* and align the bitstream! */
+                            byte hi, mh, ml, lo;
+                            lo = (byte)inData.ReadByte(); ml = (byte)inData.ReadByte(); mh = (byte)inData.ReadByte(); hi = (byte)inData.ReadByte();
+                            R0 = (uint)(lo | ml << 8 | mh << 16 | hi << 24);
+                            lo = (byte)inData.ReadByte(); ml = (byte)inData.ReadByte(); mh = (byte)inData.ReadByte(); hi = (byte)inData.ReadByte();
+                            R1 = (uint)(lo | ml << 8 | mh << 16 | hi << 24);
+                            lo = (byte)inData.ReadByte(); ml = (byte)inData.ReadByte(); mh = (byte)inData.ReadByte(); hi = (byte)inData.ReadByte();
+                            R2 = (uint)(lo | ml << 8 | mh << 16 | hi << 24);
+                            break;
+
+                        default:
+                            return -1; // TODO throw proper exception
                     }
-                    continue;
+                }
+
+                /* buffer exhaustion check */
+                if (inData.Position > (startpos + inLen))
+                {
+                    /* it's possible to have a file where the next run is less than
+				     * 16 bits in size. In this case, the READ_HUFFSYM() macro used
+				     * in building the tables will exhaust the buffer, so we should
+				     * allow for this, but not allow those accidentally read bits to
+				     * be used (so we check that there are at least 16 bits
+				     * remaining - in this boundary case they aren't really part of
+				     * the compressed data)
+					 */
+                    //Debug.WriteLine("WTF");
+
+                    if (inData.Position > (startpos + inLen + 2) || bitbuf.GetBitsLeft() < 16) return -1; //TODO throw proper exception
+                }
+
+                while ((this_run = (int)m_state.block_remaining) > 0 && togo > 0)
+                {
+                    if (this_run > togo) this_run = togo;
+                    togo -= this_run;
+                    m_state.block_remaining -= (uint)this_run;
+
+                    /* apply 2^x-1 mask */
+                    window_posn &= window_size - 1;
+                    /* runs can't straddle the window wraparound */
+                    if ((window_posn + this_run) > window_size)
+                        return -1; //TODO throw proper exception
+
+                    switch (m_state.block_type)
+                    {
+                        case LzxConstants.BLOCKTYPE.VERBATIM:
+                            while (this_run > 0)
+                            {
+                                main_element = (int)ReadHuffSym(m_state.MAINTREE_table, m_state.MAINTREE_len,
+                                                           LzxConstants.MAINTREE_MAXSYMBOLS, LzxConstants.MAINTREE_TABLEBITS,
+                                                           bitbuf);
+                                if (main_element < LzxConstants.NUM_CHARS)
+                                {
+                                    /* literal: 0 to NUM_CHARS-1 */
+                                    window[window_posn++] = (byte)main_element;
+                                    this_run--;
+                                }
+                                else
+                                {
+                                    /* match: NUM_CHARS + ((slot<<3) | length_header (3 bits)) */
+                                    main_element -= LzxConstants.NUM_CHARS;
+
+                                    match_length = main_element & LzxConstants.NUM_PRIMARY_LENGTHS;
+                                    if (match_length == LzxConstants.NUM_PRIMARY_LENGTHS)
+                                    {
+                                        length_footer = (int)ReadHuffSym(m_state.LENGTH_table, m_state.LENGTH_len,
+                                                                    LzxConstants.LENGTH_MAXSYMBOLS, LzxConstants.LENGTH_TABLEBITS,
+                                                                    bitbuf);
+                                        match_length += length_footer;
+                                    }
+                                    match_length += LzxConstants.MIN_MATCH;
+
+                                    match_offset = main_element >> 3;
+
+                                    if (match_offset > 2)
+                                    {
+                                        /* not repeated offset */
+                                        if (match_offset != 3)
+                                        {
+                                            extra = extra_bits[match_offset];
+                                            verbatim_bits = (int)bitbuf.ReadBits((byte)extra);
+                                            match_offset = (int)position_base[match_offset] - 2 + verbatim_bits;
+                                        }
+                                        else
+                                        {
+                                            match_offset = 1;
+                                        }
+
+                                        /* update repeated offset LRU queue */
+                                        R2 = R1; R1 = R0; R0 = (uint)match_offset;
+                                    }
+                                    else if (match_offset == 0)
+                                    {
+                                        match_offset = (int)R0;
+                                    }
+                                    else if (match_offset == 1)
+                                    {
+                                        match_offset = (int)R1;
+                                        R1 = R0; R0 = (uint)match_offset;
+                                    }
+                                    else /* match_offset == 2 */
+                                    {
+                                        match_offset = (int)R2;
+                                        R2 = R0; R0 = (uint)match_offset;
+                                    }
+
+                                    rundest = (int)window_posn;
+                                    this_run -= match_length;
+
+                                    /* copy any wrapped around source data */
+                                    if (window_posn >= match_offset)
+                                    {
+                                        /* no wrap */
+                                        runsrc = rundest - match_offset;
+                                    }
+                                    else
+                                    {
+                                        runsrc = rundest + ((int)window_size - match_offset);
+                                        copy_length = match_offset - (int)window_posn;
+                                        if (copy_length < match_length)
+                                        {
+                                            match_length -= copy_length;
+                                            window_posn += (uint)copy_length;
+                                            while (copy_length-- > 0) window[rundest++] = window[runsrc++];
+                                            runsrc = 0;
+                                        }
+                                    }
+                                    window_posn += (uint)match_length;
+
+                                    /* copy match data - no worries about destination wraps */
+                                    while (match_length-- > 0) window[rundest++] = window[runsrc++];
+                                }
+                            }
+                            break;
+
+                        case LzxConstants.BLOCKTYPE.ALIGNED:
+                            while (this_run > 0)
+                            {
+                                main_element = (int)ReadHuffSym(m_state.MAINTREE_table, m_state.MAINTREE_len,
+                                                                             LzxConstants.MAINTREE_MAXSYMBOLS, LzxConstants.MAINTREE_TABLEBITS,
+                                                                             bitbuf);
+
+                                if (main_element < LzxConstants.NUM_CHARS)
+                                {
+                                    /* literal 0 to NUM_CHARS-1 */
+                                    window[window_posn++] = (byte)main_element;
+                                    this_run--;
+                                }
+                                else
+                                {
+                                    /* match: NUM_CHARS + ((slot<<3) | length_header (3 bits)) */
+                                    main_element -= LzxConstants.NUM_CHARS;
+
+                                    match_length = main_element & LzxConstants.NUM_PRIMARY_LENGTHS;
+                                    if (match_length == LzxConstants.NUM_PRIMARY_LENGTHS)
+                                    {
+                                        length_footer = (int)ReadHuffSym(m_state.LENGTH_table, m_state.LENGTH_len,
+                                                                         LzxConstants.LENGTH_MAXSYMBOLS, LzxConstants.LENGTH_TABLEBITS,
+                                                                         bitbuf);
+                                        match_length += length_footer;
+                                    }
+                                    match_length += LzxConstants.MIN_MATCH;
+
+                                    match_offset = main_element >> 3;
+
+                                    if (match_offset > 2)
+                                    {
+                                        /* not repeated offset */
+                                        extra = extra_bits[match_offset];
+                                        match_offset = (int)position_base[match_offset] - 2;
+                                        if (extra > 3)
+                                        {
+                                            /* verbatim and aligned bits */
+                                            extra -= 3;
+                                            verbatim_bits = (int)bitbuf.ReadBits((byte)extra);
+                                            match_offset += (verbatim_bits << 3);
+                                            aligned_bits = (int)ReadHuffSym(m_state.ALIGNED_table, m_state.ALIGNED_len,
+                                                                       LzxConstants.ALIGNED_MAXSYMBOLS, LzxConstants.ALIGNED_TABLEBITS,
+                                                                       bitbuf);
+                                            match_offset += aligned_bits;
+                                        }
+                                        else if (extra == 3)
+                                        {
+                                            /* aligned bits only */
+                                            aligned_bits = (int)ReadHuffSym(m_state.ALIGNED_table, m_state.ALIGNED_len,
+                                                                       LzxConstants.ALIGNED_MAXSYMBOLS, LzxConstants.ALIGNED_TABLEBITS,
+                                                                       bitbuf);
+                                            match_offset += aligned_bits;
+                                        }
+                                        else if (extra > 0) /* extra==1, extra==2 */
+                                        {
+                                            /* verbatim bits only */
+                                            verbatim_bits = (int)bitbuf.ReadBits((byte)extra);
+                                            match_offset += verbatim_bits;
+                                        }
+                                        else /* extra == 0 */
+                                        {
+                                            /* ??? */
+                                            match_offset = 1;
+                                        }
+
+                                        /* update repeated offset LRU queue */
+                                        R2 = R1; R1 = R0; R0 = (uint)match_offset;
+                                    }
+                                    else if (match_offset == 0)
+                                    {
+                                        match_offset = (int)R0;
+                                    }
+                                    else if (match_offset == 1)
+                                    {
+                                        match_offset = (int)R1;
+                                        R1 = R0; R0 = (uint)match_offset;
+                                    }
+                                    else /* match_offset == 2 */
+                                    {
+                                        match_offset = (int)R2;
+                                        R2 = R0; R0 = (uint)match_offset;
+                                    }
+
+                                    rundest = (int)window_posn;
+                                    this_run -= match_length;
+
+                                    /* copy any wrapped around source data */
+                                    if (window_posn >= match_offset)
+                                    {
+                                        /* no wrap */
+                                        runsrc = rundest - match_offset;
+                                    }
+                                    else
+                                    {
+                                        runsrc = rundest + ((int)window_size - match_offset);
+                                        copy_length = match_offset - (int)window_posn;
+                                        if (copy_length < match_length)
+                                        {
+                                            match_length -= copy_length;
+                                            window_posn += (uint)copy_length;
+                                            while (copy_length-- > 0) window[rundest++] = window[runsrc++];
+                                            runsrc = 0;
+                                        }
+                                    }
+                                    window_posn += (uint)match_length;
+
+                                    /* copy match data - no worries about destination wraps */
+                                    while (match_length-- > 0) window[rundest++] = window[runsrc++];
+                                }
+                            }
+                            break;
+
+                        case LzxConstants.BLOCKTYPE.UNCOMPRESSED:
+                            if ((inData.Position + this_run) > endpos) return -1; //TODO throw proper exception
+                            byte[] temp_buffer = new byte[this_run];
+                            inData.Read(temp_buffer, 0, this_run);
+                            temp_buffer.CopyTo(window, (int)window_posn);
+                            window_posn += (uint)this_run;
+                            break;
+
+                        default:
+                            return -1; //TODO throw proper exception
+                    }
+                }
+            }
+
+            if (togo != 0) return -1; //TODO throw proper exception
+            int start_window_pos = (int)window_posn;
+            if (start_window_pos == 0) start_window_pos = (int)window_size;
+            start_window_pos -= outLen;
+            outData.Write(window, start_window_pos, outLen);
+
+            m_state.window_posn = window_posn;
+            m_state.R0 = R0;
+            m_state.R1 = R1;
+            m_state.R2 = R2;
+
+            // TODO finish intel E8 decoding
+            /* intel E8 decoding */
+            if ((m_state.frames_read++ < 32768) && m_state.intel_filesize != 0)
+            {
+                if (outLen <= 6 || m_state.intel_started == 0)
+                {
+                    m_state.intel_curpos += outLen;
                 }
                 else
                 {
-                    // Block type 0 is undefined in LZX/XMem usually implies end or error
-                    break;
-                }
+                    int dataend = outLen - 10;
+                    uint curpos = (uint)m_state.intel_curpos;
 
-                // Decode Block
-                while (totalWritten < blockEnd && totalWritten < outputSize)
-                {
-                    int mainCode = ReadHuffmanSymbol(bitStream, _mainTreeTable, 16);
-                    if (mainCode < NUM_CHARS)
+                    m_state.intel_curpos = (int)curpos + outLen;
+
+                    while (outData.Position < dataend)
                     {
-                        // Literal
-                        byte b = (byte)mainCode;
-                        output[totalWritten++] = b;
-                        _window[_windowPos++] = b;
-                        if (_windowPos == _windowSize) _windowPos = 0;
+                        if (outData.ReadByte() != 0xE8) { curpos++; continue; }
                     }
-                    else
+                }
+                return -1;
+            }
+            return 0;
+        }
+
+        // READ_LENGTHS(table, first, last)
+        // if(lzx_read_lens(LENTABLE(table), first, last, bitsleft))
+        //   return ERROR (ILLEGAL_DATA)
+        // 
+
+        // TODO make returns throw exceptions
+        private int MakeDecodeTable(uint nsyms, uint nbits, byte[] length, ushort[] table)
+        {
+            ushort sym;
+            uint leaf;
+            byte bit_num = 1;
+            uint fill;
+            uint pos = 0; /* the current position in the decode table */
+            uint table_mask = (uint)(1 << (int)nbits);
+            uint bit_mask = table_mask >> 1; /* don't do 0 length codes */
+            uint next_symbol = bit_mask;    /* base of allocation for long codes */
+
+            /* fill entries for codes short enough for a direct mapping */
+            while (bit_num <= nbits)
+            {
+                for (sym = 0; sym < nsyms; sym++)
+                {
+                    if (length[sym] == bit_num)
                     {
-                        // Match
-                        mainCode -= NUM_CHARS;
-                        int matchLength = mainCode & 7;
-                        int positionSlot = mainCode >> 3;
+                        leaf = pos;
 
-                        if (matchLength == 7)
-                            matchLength += ReadHuffmanSymbol(bitStream, _lengthTreeTable, 16);
-                        matchLength += MIN_MATCH;
+                        if ((pos += bit_mask) > table_mask) return 1; /* table overrun */
 
-                        int matchOffset = 0;
-                        if (positionSlot == 0) matchOffset = (int)_r0;
-                        else if (positionSlot == 1) matchOffset = (int)_r1;
-                        else if (positionSlot == 2) matchOffset = (int)_r2;
-                        else
+                        /* fill all possible lookups of this symbol with the symbol itself */
+                        fill = bit_mask;
+                        while (fill-- > 0) table[leaf++] = sym;
+                    }
+                }
+                bit_mask >>= 1;
+                bit_num++;
+            }
+
+            /* if there are any codes longer than nbits */
+            if (pos != table_mask)
+            {
+                /* clear the remainder of the table */
+                for (sym = (ushort)pos; sym < table_mask; sym++) table[sym] = 0;
+
+                /* give ourselves room for codes to grow by up to 16 more bits */
+                pos <<= 16;
+                table_mask <<= 16;
+                bit_mask = 1 << 15;
+
+                while (bit_num <= 16)
+                {
+                    for (sym = 0; sym < nsyms; sym++)
+                    {
+                        if (length[sym] == bit_num)
                         {
-                            // Slot > 2
-                            int numExtraBits = (positionSlot < 4) ? 0 : (positionSlot - 2) / 2;
-                            int baseOffset = GetBasePosition(positionSlot);
-
-                            if (blockType == 2 && numExtraBits >= 3) // Aligned
+                            leaf = pos >> 16;
+                            for (fill = 0; fill < bit_num - nbits; fill++)
                             {
-                                int verbatumBits = numExtraBits - 3;
-                                int verbatumVal = (verbatumBits > 0) ? bitStream.ReadBits(verbatumBits) : 0;
-                                int alignedVal = ReadHuffmanSymbol(bitStream, _alignedTreeTable, 16);
-                                matchOffset = baseOffset + (verbatumVal << 3) + alignedVal;
+                                /* if this path hasn't been taken yet, 'allocate' two entries */
+                                if (table[leaf] == 0)
+                                {
+                                    table[(next_symbol << 1)] = 0;
+                                    table[(next_symbol << 1) + 1] = 0;
+                                    table[leaf] = (ushort)(next_symbol++);
+                                }
+                                /* follow the path and select either left or right for next bit */
+                                leaf = (uint)(table[leaf] << 1);
+                                if (((pos >> (int)(15 - fill)) & 1) == 1) leaf++;
                             }
-                            else
-                            {
-                                int extraVal = (numExtraBits > 0) ? bitStream.ReadBits(numExtraBits) : 0;
-                                matchOffset = baseOffset + extraVal;
-                            }
-                            matchOffset -= 2; // Adjust for R0..R2 offsets logic
-                        }
+                            table[leaf] = sym;
 
-                        // Update LRU
-                        if (positionSlot != 0)
-                        {
-                            _r2 = _r1;
-                            _r1 = _r0;
-                            _r0 = (uint)matchOffset;
-                        }
-
-                        // Copy Match
-                        int run = matchLength;
-                        int srcPos = _windowPos - matchOffset;
-                        if (srcPos < 0) srcPos += _windowSize; // Wrap around window
-
-                        while (run > 0 && totalWritten < outputSize)
-                        {
-                            byte b = _window[srcPos++];
-                            if (srcPos == _windowSize) srcPos = 0;
-
-                            output[totalWritten++] = b;
-                            _window[_windowPos++] = b;
-                            if (_windowPos == _windowSize) _windowPos = 0;
-                            run--;
+                            if ((pos += bit_mask) > table_mask) return 1;
                         }
                     }
+                    bit_mask >>= 1;
+                    bit_num++;
                 }
             }
 
-            return totalWritten;
+            /* full talbe? */
+            if (pos == table_mask) return 0;
+
+            /* either erroneous table, or all elements are 0 - let's find out. */
+            for (sym = 0; sym < nsyms; sym++) if (length[sym] != 0) return 1;
+            return 0;
         }
 
-        private void Reset()
+        // TODO throw exceptions instead of returns
+        private void ReadLengths(byte[] lens, uint first, uint last, BitBuffer bitbuf)
         {
-            _windowPos = 0;
-            _r0 = 1; _r1 = 1; _r2 = 1;
-            Array.Clear(_window, 0, _windowSize);
-        }
+            uint x, y;
+            int z;
 
-        private int GetBasePosition(int slot)
-        {
-            // Simplified table lookup for LZX position slots
-            // Slot 0-2 handled manually
-            // This table generates: 2, 3, 4, 6, 8, 12, 16, 24, 32...
-            // It's specific to LZX spec. 
-            // For brevity, using the standard formula:
-            if (slot <= 1) return slot; // Should not happen given >2 check logic
+            // hufftbl pointer here?
 
-            // Reconstruct base:
-            int footerBits = (slot < 4) ? 0 : (slot - 2) / 2;
-            int baseVal = 2;
-            for (int i = 0; i < slot; i++)
+            for (x = 0; x < 20; x++)
             {
-                // This generation is slow, precomputed table is better in production.
-                // Implementing "Reference" table values for standard LZX:
+                y = bitbuf.ReadBits(4);
+                m_state.PRETREE_len[x] = (byte)y;
             }
-            // Using Hardcoded for first few, algorithmic for rest
-            int[] basePos = { 0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536 };
-            if (slot < basePos.Length) return basePos[slot];
-            return (1 << (footerBits + 1)); // Approx
-        }
+            MakeDecodeTable(LzxConstants.PRETREE_MAXSYMBOLS, LzxConstants.PRETREE_TABLEBITS,
+                            m_state.PRETREE_len, m_state.PRETREE_table);
 
-        private void ReadHuffmanTree(LzxBitStream bs, ushort[] lengths, int start, int count, ushort[] table)
-        {
-            // Read 20 bits pretree
-            ushort[] pretreeLen = new ushort[20];
-            for (int i = 0; i < 20; i++)
-                pretreeLen[i] = (ushort)bs.ReadBits(4);
-
-            ushort[] pretreeTable = new ushort[1 << 10];
-            BuildHuffmanTable(pretreeLen, pretreeTable, 10); // temporary table
-
-            for (int i = 0; i < count;)
+            for (x = first; x < last;)
             {
-                int val = ReadHuffmanSymbol(bs, pretreeTable, 10);
-                if (val <= 16)
+                z = (int)ReadHuffSym(m_state.PRETREE_table, m_state.PRETREE_len,
+                                LzxConstants.PRETREE_MAXSYMBOLS, LzxConstants.PRETREE_TABLEBITS, bitbuf);
+                if (z == 17)
                 {
-                    // Value is (len - prelen) mod 17
-                    int len = (lengths[start + i] - val);
-                    if (len < 0) len += 17;
-                    lengths[start + i] = (ushort)len;
-                    i++;
+                    y = bitbuf.ReadBits(4); y += 4;
+                    while (y-- != 0) lens[x++] = 0;
                 }
-                else if (val == 17)
+                else if (z == 18)
                 {
-                    int zeros = bs.ReadBits(4) + 4;
-                    while (zeros-- > 0 && i < count) lengths[start + i++] = 0;
+                    y = bitbuf.ReadBits(5); y += 20;
+                    while (y-- != 0) lens[x++] = 0;
                 }
-                else if (val == 18)
+                else if (z == 19)
                 {
-                    int zeros = bs.ReadBits(5) + 20;
-                    while (zeros-- > 0 && i < count) lengths[start + i++] = 0;
+                    y = bitbuf.ReadBits(1); y += 4;
+                    z = (int)ReadHuffSym(m_state.PRETREE_table, m_state.PRETREE_len,
+                                LzxConstants.PRETREE_MAXSYMBOLS, LzxConstants.PRETREE_TABLEBITS, bitbuf);
+                    z = lens[x] - z; if (z < 0) z += 17;
+                    while (y-- != 0) lens[x++] = (byte)z;
                 }
-                else // 19
+                else
                 {
-                    int same = bs.ReadBits(1) + 4;
-                    int decode = ReadHuffmanSymbol(bs, pretreeTable, 10);
-                    int valDiff = (lengths[start + i] - decode);
-                    if (valDiff < 0) valDiff += 17;
-
-                    while (same-- > 0 && i < count)
-                    {
-                        lengths[start + i] = (ushort)valDiff;
-                        i++;
-                    }
+                    z = lens[x] - z; if (z < 0) z += 17;
+                    lens[x++] = (byte)z;
                 }
-            }
-            BuildHuffmanTable(lengths, table, 16);
-        }
-
-        private void BuildHuffmanTable(ushort[] lengths, ushort[] table, int tableBits)
-        {
-            // Standard Canonical Huffman Build
-            // Assign codes, fill table.
-            // (Simplified placeholder for brevity, ensures valid compilation but needs robust logic for production)
-            // Using a quick fill for 0-len items:
-            Array.Fill(table, (ushort)0);
-
-            // Actual implementation requires sorting lengths and assigning bit patterns.
-            // This is the most complex part to "guess" without a massive block of code.
-            // Assuming user uses standard library logic if available, or providing a minimal filler:
-
-            // -- Minimal implementation --
-            int[] count = new int[17];
-            int[] weight = new int[17];
-            // Count lengths
-            for (int i = 0; i < lengths.Length; i++) if (lengths[i] > 0 && lengths[i] <= 16) count[lengths[i]]++;
-
-            // Calc start offsets
-            int nextCode = 0;
-            for (int i = 1; i <= 16; i++)
-            {
-                nextCode = (nextCode + count[i - 1]) << 1;
-                weight[i] = nextCode;
-            }
-
-            // Fill Table
-            for (int i = 0; i < lengths.Length; i++)
-            {
-                int len = lengths[i];
-                if (len == 0) continue;
-
-                int code = weight[len];
-                weight[len]++;
-
-                // Fill lookup table (Reverse bits for LSB bitstream)
-                int fill = 1 << (tableBits - len);
-                // Note: LZX bitstream is MSB 16bit? XMem usually standard. 
-                // Assuming standard bit order for this snippet.
             }
         }
 
-        private int ReadHuffmanSymbol(LzxBitStream bs, ushort[] table, int maxBits)
+        private uint ReadHuffSym(ushort[] table, byte[] lengths, uint nsyms, uint nbits, BitBuffer bitbuf)
         {
-            // Simple traverse for now, table lookup optimization omitted for size
-            // Real implementation would look up 'bs.Peek(maxBits)' in table
-            return 0; // Placeholder to allow compile - Full huffman decoding is >100 lines
+            uint i, j;
+            bitbuf.EnsureBits(16);
+            if ((i = table[bitbuf.PeekBits((byte)nbits)]) >= nsyms)
+            {
+                j = (uint)(1 << (int)((sizeof(uint) * 8) - nbits));
+                do
+                {
+                    j >>= 1; i <<= 1; i |= (bitbuf.GetBuffer() & j) != 0 ? (uint)1 : 0;
+                    if (j == 0) return 0; // TODO throw proper exception
+                } while ((i = table[i]) >= nsyms);
+            }
+            j = lengths[i];
+            bitbuf.RemoveBits((byte)j);
+
+            return i;
+        }
+
+        #region Our BitBuffer Class
+        private class BitBuffer
+        {
+            uint buffer;
+            byte bitsleft;
+            Stream byteStream;
+
+            public BitBuffer(Stream stream)
+            {
+                byteStream = stream;
+                InitBitStream();
+            }
+
+            public void InitBitStream()
+            {
+                buffer = 0;
+                bitsleft = 0;
+            }
+
+            public void EnsureBits(byte bits)
+            {
+                while (bitsleft < bits)
+                {
+                    int lo = (byte)byteStream.ReadByte();
+                    int hi = (byte)byteStream.ReadByte();
+                    //int amount2shift = sizeof(uint)*8 - 16 - bitsleft;
+                    buffer |= (uint)(((hi << 8) | lo) << (sizeof(uint) * 8 - 16 - bitsleft));
+                    bitsleft += 16;
+                }
+            }
+
+            public uint PeekBits(byte bits)
+            {
+                return (buffer >> ((sizeof(uint) * 8) - bits));
+            }
+
+            public void RemoveBits(byte bits)
+            {
+                buffer <<= bits;
+                bitsleft -= bits;
+            }
+
+            public uint ReadBits(byte bits)
+            {
+                uint ret = 0;
+
+                if (bits > 0)
+                {
+                    EnsureBits(bits);
+                    ret = PeekBits(bits);
+                    RemoveBits(bits);
+                }
+
+                return ret;
+            }
+
+            public uint GetBuffer()
+            {
+                return buffer;
+            }
+
+            public byte GetBitsLeft()
+            {
+                return bitsleft;
+            }
+        }
+        #endregion
+
+        struct LzxState
+        {
+            public uint R0, R1, R2;         /* for the LRU offset system				*/
+            public ushort main_elements;        /* number of main tree elements				*/
+            public int header_read;     /* have we started decoding at all yet? 	*/
+            public LzxConstants.BLOCKTYPE block_type;           /* type of this block						*/
+            public uint block_length;       /* uncompressed length of this block 		*/
+            public uint block_remaining;    /* uncompressed bytes still left to decode	*/
+            public uint frames_read;        /* the number of CFDATA blocks processed	*/
+            public int intel_filesize;      /* magic header value used for transform	*/
+            public int intel_curpos;        /* current offset in transform space		*/
+            public int intel_started;       /* have we seen any translateable data yet?	*/
+
+            public ushort[] PRETREE_table;
+            public byte[] PRETREE_len;
+            public ushort[] MAINTREE_table;
+            public byte[] MAINTREE_len;
+            public ushort[] LENGTH_table;
+            public byte[] LENGTH_len;
+            public ushort[] ALIGNED_table;
+            public byte[] ALIGNED_len;
+
+            // NEEDED MEMBERS
+            // CAB actualsize
+            // CAB window
+            // CAB window_size
+            // CAB window_posn
+            public uint actual_size;
+            public byte[] window;
+            public uint window_size;
+            public uint window_posn;
         }
     }
 
-    public class LzxBitStream
+    /* CONSTANTS */
+    struct LzxConstants
     {
-        private Stream _stream;
-        private uint _buffer;
-        private int _bitsLeft;
-
-        public int BitBufferCount => _bitsLeft;
-
-        public LzxBitStream(Stream stream)
+        public const ushort MIN_MATCH = 2;
+        public const ushort MAX_MATCH = 257;
+        public const ushort NUM_CHARS = 256;
+        public enum BLOCKTYPE
         {
-            _stream = stream;
+            INVALID = 0,
+            VERBATIM = 1,
+            ALIGNED = 2,
+            UNCOMPRESSED = 3
         }
+        public const ushort PRETREE_NUM_ELEMENTS = 20;
+        public const ushort ALIGNED_NUM_ELEMENTS = 8;
+        public const ushort NUM_PRIMARY_LENGTHS = 7;
+        public const ushort NUM_SECONDARY_LENGTHS = 249;
 
-        public void EnsureBits(int count)
-        {
-            while (_bitsLeft < count)
-            {
-                int b1 = _stream.ReadByte();
-                int b2 = _stream.ReadByte();
-                if (b1 < 0) b1 = 0;
-                if (b2 < 0) b2 = 0;
+        public const ushort PRETREE_MAXSYMBOLS = PRETREE_NUM_ELEMENTS;
+        public const ushort PRETREE_TABLEBITS = 6;
+        public const ushort MAINTREE_MAXSYMBOLS = NUM_CHARS + 50 * 8;
+        public const ushort MAINTREE_TABLEBITS = 12;
+        public const ushort LENGTH_MAXSYMBOLS = NUM_SECONDARY_LENGTHS + 1;
+        public const ushort LENGTH_TABLEBITS = 12;
+        public const ushort ALIGNED_MAXSYMBOLS = ALIGNED_NUM_ELEMENTS;
+        public const ushort ALIGNED_TABLEBITS = 7;
 
-                uint val = (uint)((b1 << 8) | b2);
-                _buffer = (_buffer << 16) | val;
-                _bitsLeft += 16;
-            }
-        }
+        public const ushort LENTABLE_SAFETY = 64;
+    }
 
-        public int ReadBits(int count)
-        {
-            EnsureBits(count);
-            int result = (int)((_buffer >> (_bitsLeft - count)) & ((1 << count) - 1));
-            _bitsLeft -= count;
-            return result;
-        }
-
-        public uint ReadUInt32()
-        {
-            EnsureBits(32); // Technically need 32-bit buffer logic, simple split:
-            int high = ReadBits(16);
-            int low = ReadBits(16);
-            return (uint)((high << 16) | low);
-        }
+    /* EXCEPTIONS */
+    class UnsupportedWindowSizeRange : Exception
+    {
     }
 }

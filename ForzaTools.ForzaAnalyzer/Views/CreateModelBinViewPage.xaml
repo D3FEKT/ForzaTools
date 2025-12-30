@@ -42,6 +42,23 @@
                                          PlaceholderText="Select an .obj file..." IsReadOnly="True"/>
                                 <Button Grid.Column="1" Command="{x:Bind ViewModel.PickInputFileCommand}" Content="Browse..."/>
                             </Grid>
+
+                            <!-- Axis Selection for Import -->
+                            <StackPanel Spacing="8" Margin="0,12,0,0">
+                                <TextBlock Text="Coordinate System (set before importing)" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                                <TextBlock Text="Configure the source file's coordinate system. Common presets: Blender (-Z Forward, +Y Up), 3ds Max (+Y Forward, +Z Up), Maya (+Z Forward, +Y Up)." 
+                                           FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <ComboBox Header="Forward Axis" 
+                                              ItemsSource="{x:Bind ViewModel.AxisOptions}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedForwardAxis, Mode=TwoWay}"
+                                              HorizontalAlignment="Stretch"/>
+                                    <ComboBox Grid.Column="1" Header="Up Axis" 
+                                              ItemsSource="{x:Bind ViewModel.AxisOptions}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedUpAxis, Mode=TwoWay}"
+                                              HorizontalAlignment="Stretch"/>
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
 
                         <StackPanel Spacing="20" Visibility="{x:Bind ViewModel.IsFileSelected, Mode=OneWay, Converter={StaticResource BoolToVis}}">
@@ -113,6 +130,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Text="Model Groups" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,0,0,8"/>
@@ -131,7 +149,11 @@
                                 </ListView.ItemTemplate>
                             </ListView>
 
-                            <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.MtlStatusMessage, Mode=OneWay}" 
+                            <Button Grid.Row="2" Command="{x:Bind ViewModel.ToggleSelectAllGroupsCommand}" 
+                                    Content="{x:Bind ViewModel.SelectAllButtonText, Mode=OneWay}"
+                                    HorizontalAlignment="Stretch" Margin="0,8,0,0"/>
+
+                            <TextBlock Grid.Row="3" Text="{x:Bind ViewModel.MtlStatusMessage, Mode=OneWay}" 
                                        FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" 
                                        Margin="0,4,0,0" TextWrapping="Wrap"/>
                         </Grid>
@@ -140,17 +162,13 @@
                             <TextBlock Text="Geometry Modifiers" Style="{StaticResource SubtitleTextBlockStyle}"/>
                             <TextBlock Text="Changes here trigger re-processing." FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
-                            <TextBlock Text="Rotation (Degrees)" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0"/>
-                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-                                <NumberBox Header="Pitch (X)" Value="{x:Bind ViewModel.RotationPitch, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
-                                <NumberBox Header="Yaw (Y)" Grid.Column="1" Value="{x:Bind ViewModel.RotationYaw, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
-                                <NumberBox Header="Roll (Z)" Grid.Column="2" Value="{x:Bind ViewModel.RotationRoll, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
-                            </Grid>
-
                             <MenuFlyoutSeparator Margin="0,8"/>
 
                             <TextBlock Text="Symmetry" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0"/>
                             <CheckBox Content="Mirror Geometry (X-Axis)" IsChecked="{x:Bind ViewModel.IsMirrorEnabled, Mode=TwoWay}"/>
+                            <CheckBox Content="Recalculate Normals" 
+                             IsChecked="{x:Bind ViewModel.RecalculateNormals, Mode=TwoWay}"
+                             ToolTipService.ToolTip="Regenerates smooth vertex normals from face data. Fixes 'shiny' or broken lighting from bad source normals."/>
                             <TextBlock Text="Mirrors positions, normals, and flips faces." FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="28,-4,0,0"/>
 
                             <MenuFlyoutSeparator Margin="0,8"/>
@@ -159,16 +177,16 @@
 
                             <TextBlock Text="Position" Style="{StaticResource CaptionTextBlockStyle}"/>
                             <StackPanel Orientation="Horizontal" Spacing="16">
-                                <CheckBox Content="X" IsChecked="{x:Bind ViewModel.FlipX_Pos, Mode=TwoWay}"/>
-                                <CheckBox Content="Y" IsChecked="{x:Bind ViewModel.FlipY_Pos, Mode=TwoWay}"/>
-                                <CheckBox Content="Z" IsChecked="{x:Bind ViewModel.FlipZ_Pos, Mode=TwoWay}"/>
+                                <CheckBox Content="X" IsChecked="{x:Bind ViewModel.FlipVertexX, Mode=TwoWay}"/>
+                                <CheckBox Content="Y" IsChecked="{x:Bind ViewModel.FlipVertexY, Mode=TwoWay}"/>
+                                <CheckBox Content="Z" IsChecked="{x:Bind ViewModel.FlipVertexZ, Mode=TwoWay}"/>
                             </StackPanel>
 
                             <TextBlock Text="Normals" Style="{StaticResource CaptionTextBlockStyle}"/>
                             <StackPanel Orientation="Horizontal" Spacing="16">
-                                <CheckBox Content="X" IsChecked="{x:Bind ViewModel.FlipX_Norm, Mode=TwoWay}"/>
-                                <CheckBox Content="Y" IsChecked="{x:Bind ViewModel.FlipY_Norm, Mode=TwoWay}"/>
-                                <CheckBox Content="Z" IsChecked="{x:Bind ViewModel.FlipZ_Norm, Mode=TwoWay}"/>
+                                <CheckBox Content="X" IsChecked="{x:Bind ViewModel.FlipNormalX, Mode=TwoWay}"/>
+                                <CheckBox Content="Y" IsChecked="{x:Bind ViewModel.FlipNormalY, Mode=TwoWay}"/>
+                                <CheckBox Content="Z" IsChecked="{x:Bind ViewModel.FlipNormalZ, Mode=TwoWay}"/>
                             </StackPanel>
 
                             <CheckBox Content="Flip Faces (Winding)" IsChecked="{x:Bind ViewModel.FlipFaces, Mode=TwoWay}" Margin="0,8,0,0"/>
@@ -179,4 +197,6 @@
             </StackPanel>
         </ScrollViewer>
     </Grid>
+
+
 </Page>

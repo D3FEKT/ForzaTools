@@ -59,8 +59,11 @@
 
                 <Border Grid.Row="2" Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" Margin="0,12"/>
 
-                <TextBlock Grid.Row="3" Text="Meshes" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,0,0,8" VerticalAlignment="Top"/>
-                <ListView Grid.Row="3" x:Name="MeshList" Margin="0,32,0,0" 
+                <StackPanel Grid.Row="3" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,0,0,8">
+                    <TextBlock Text="Meshes" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <CheckBox x:Name="ShowNormalsCheckBox" Content="Show Normals" Checked="ShowNormals_Checked" Unchecked="ShowNormals_Checked"/>
+                </StackPanel>
+                <ListView Grid.Row="3" x:Name="MeshList" Margin="0,40,0,0" 
                           ItemsSource="{x:Bind Meshes}"
                           SelectionMode="None">
                     <ListView.ItemTemplate>

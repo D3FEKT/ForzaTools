@@ -23,6 +23,7 @@ namespace ForzaTools.ForzaAnalyzer.Services
         public Vector3[] Positions;
         public Vector3[] Normals;
         public Vector2[] UVs;
+        public Vector4[] Tangents;
         public int[] Indices;
     }
 
